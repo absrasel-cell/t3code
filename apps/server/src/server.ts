@@ -23,6 +23,7 @@ import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter.ts";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter.ts";
 import { makeCursorAdapterLive } from "./provider/Layers/CursorAdapter.ts";
 import { makeOpenCodeAdapterLive } from "./provider/Layers/OpenCodeAdapter.ts";
+import { makeRedClawAdapterLive } from "./provider/Layers/RedClawAdapter.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
@@ -76,6 +77,8 @@ import {
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
 } from "./orchestration/http.ts";
+import { resolveRedClawConfig } from "./provider/redclawConfig.ts";
+import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "./remoteBuilderMode.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -152,25 +155,34 @@ const ProviderLayerLive = Layer.unwrap(
     const canonicalEventLogger = yield* makeEventNdjsonLogger(providerEventLogPath, {
       stream: "canonical",
     });
-    const codexAdapterLayer = makeCodexAdapterLive(
-      nativeEventLogger ? { nativeEventLogger } : undefined,
-    );
-    const claudeAdapterLayer = makeClaudeAdapterLive(
-      nativeEventLogger ? { nativeEventLogger } : undefined,
-    );
-    const openCodeAdapterLayer = makeOpenCodeAdapterLive(
-      nativeEventLogger ? { nativeEventLogger } : undefined,
-    );
-    const cursorAdapterLayer = makeCursorAdapterLive(
-      nativeEventLogger ? { nativeEventLogger } : undefined,
-    );
-    const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
-      Layer.provide(codexAdapterLayer),
-      Layer.provide(claudeAdapterLayer),
-      Layer.provide(openCodeAdapterLayer),
-      Layer.provide(cursorAdapterLayer),
-      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
-    );
+    const appMode = resolveServerAppModeFromEnv();
+    const adapterRegistryLayer = isRemoteBuilderMode(appMode)
+      ? (() => {
+          const redClawConfig = resolveRedClawConfig();
+          return redClawConfig
+            ? ProviderAdapterRegistryLive.pipe(
+                Layer.provide(makeRedClawAdapterLive(redClawConfig)),
+                Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+              )
+            : ProviderAdapterRegistryLive.pipe(
+                Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+              );
+        })()
+      : ProviderAdapterRegistryLive.pipe(
+          Layer.provide(
+            makeCodexAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
+          ),
+          Layer.provide(
+            makeClaudeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
+          ),
+          Layer.provide(
+            makeOpenCodeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
+          ),
+          Layer.provide(
+            makeCursorAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
+          ),
+          Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+        );
     return makeProviderServiceLive(
       canonicalEventLogger ? { canonicalEventLogger } : undefined,
     ).pipe(

@@ -60,6 +60,7 @@ import {
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
+import { BUILDER_ENVIRONMENT } from "../builderEnvironment.runtime";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform, newCommandId } from "../lib/utils";
 import {
@@ -161,6 +162,7 @@ import {
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
+import { RemoteBuilderStatus } from "./RemoteBuilderStatus";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { CommandDialogTrigger } from "./ui/command";
 import { readEnvironmentApi } from "../environmentApi";
@@ -2213,6 +2215,14 @@ function T3Wordmark() {
   );
 }
 
+function RedXtrmWordmark() {
+  return (
+    <span className="shrink-0 text-xs font-semibold tracking-[-0.02em] text-foreground">
+      RedXTRM
+    </span>
+  );
+}
+
 type SortableProjectHandleProps = Pick<
   ReturnType<typeof useSortable>,
   "attributes" | "listeners" | "setActivatorNodeRef"
@@ -2366,9 +2376,9 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
               className="ml-1 flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md outline-hidden ring-ring transition-colors hover:text-foreground focus-visible:ring-2"
               to="/"
             >
-              <T3Wordmark />
+              {BUILDER_ENVIRONMENT.isRemote ? <RedXtrmWordmark /> : <T3Wordmark />}
               <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
-                Code
+                {BUILDER_ENVIRONMENT.isRemote ? "Builder" : "Code"}
               </span>
               <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
                 {APP_STAGE_LABEL}
@@ -2400,6 +2410,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="p-2">
+      <RemoteBuilderStatus />
       <SidebarUpdatePill />
       <SidebarMenu>
         <SidebarMenuItem>

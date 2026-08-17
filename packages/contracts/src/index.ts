@@ -1,4 +1,5 @@
 export * from "./baseSchemas.ts";
+export * from "./builderHandoff.ts";
 export * from "./auth.ts";
 export * from "./environment.ts";
 export * from "./ipc.ts";

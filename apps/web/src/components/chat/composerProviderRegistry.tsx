@@ -163,6 +163,9 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
   opencode: createProviderRegistryEntry("opencode", {
     showInteractionModeToggle: false,
   }),
+  redclaw: createProviderRegistryEntry("redclaw", {
+    showInteractionModeToggle: false,
+  }),
 };
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {

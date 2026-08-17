@@ -12,6 +12,7 @@ import {
   resolveContextWindow,
   trimOrNull,
 } from "@t3tools/shared/model";
+import { BUILDER_ENVIRONMENT } from "./builderEnvironment.runtime";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = {
   reasoningEffortLevels: [],
@@ -39,6 +40,15 @@ export function isProviderEnabled(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind,
 ): boolean {
+  if (BUILDER_ENVIRONMENT.isRemote) {
+    const snapshot = getProviderSnapshot(providers, provider);
+    return (
+      provider === "redclaw" &&
+      snapshot?.enabled === true &&
+      snapshot.installed &&
+      snapshot.status === "ready"
+    );
+  }
   if (providers.length === 0) {
     return true;
   }
@@ -49,6 +59,9 @@ export function resolveSelectableProvider(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind | null | undefined,
 ): ProviderKind {
+  if (BUILDER_ENVIRONMENT.isRemote) {
+    return "redclaw";
+  }
   const requested = provider ?? "codex";
   if (isProviderEnabled(providers, requested)) {
     return requested;

@@ -12,6 +12,7 @@ import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   PROVIDER_OPTIONS,
+  providerOptionsForMode,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
@@ -22,6 +23,21 @@ import {
   hasToolActivityForTurn,
   isLatestTurnSettled,
 } from "./session-logic";
+
+describe("providerOptionsForMode", () => {
+  it("preserves local providers and exposes only RedClaw in remote mode", () => {
+    expect(providerOptionsForMode("local").map((provider) => provider.value)).toEqual([
+      "codex",
+      "claudeAgent",
+      "opencode",
+      "cursor",
+    ]);
+    expect(providerOptionsForMode("redxtrm-remote")).toEqual([
+      { value: "redclaw", label: "RedClaw", available: true },
+    ]);
+    expect(PROVIDER_OPTIONS.length).toBeGreaterThan(0);
+  });
+});
 
 function makeActivity(overrides: {
   id?: string;

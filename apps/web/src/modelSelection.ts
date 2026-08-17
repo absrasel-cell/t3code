@@ -63,6 +63,13 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     placeholder: "openai/gpt-5",
     example: "anthropic/claude-sonnet-4-5-20250929",
   },
+  redclaw: {
+    provider: "redclaw",
+    title: "RedClaw",
+    description: "Save additional client-safe RedClaw agent-route slugs.",
+    placeholder: "client-dev-orchestrator",
+    example: "client-dev-builder",
+  },
 };
 
 export const MODEL_PROVIDER_SETTINGS = Object.values(PROVIDER_CUSTOM_MODEL_CONFIG);
@@ -194,6 +201,12 @@ export function getCustomModelOptionsByProvider(
       providers,
       "opencode",
       selectedProvider === "opencode" ? selectedModel : undefined,
+    ),
+    redclaw: getAppModelOptions(
+      settings,
+      providers,
+      "redclaw",
+      selectedProvider === "redclaw" ? selectedModel : undefined,
     ),
   };
 }

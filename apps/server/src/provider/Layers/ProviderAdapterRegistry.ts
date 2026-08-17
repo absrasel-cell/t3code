@@ -19,24 +19,40 @@ import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { CodexAdapter } from "../Services/CodexAdapter.ts";
 import { CursorAdapter } from "../Services/CursorAdapter.ts";
 import { OpenCodeAdapter } from "../Services/OpenCodeAdapter.ts";
+import { RedClawAdapter } from "../Services/RedClawAdapter.ts";
+import {
+  isRemoteBuilderMode,
+  resolveServerAppModeFromEnv,
+  type ServerAppMode,
+} from "../../remoteBuilderMode.ts";
 
 export interface ProviderAdapterRegistryLiveOptions {
   readonly adapters?: ReadonlyArray<ProviderAdapterShape<ProviderAdapterError>>;
+  readonly mode?: ServerAppMode;
 }
 
 const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(function* (
   options?: ProviderAdapterRegistryLiveOptions,
 ) {
+  const mode = options?.mode ?? resolveServerAppModeFromEnv();
+  const codexAdapterOption = yield* Effect.serviceOption(CodexAdapter);
+  const claudeAdapterOption = yield* Effect.serviceOption(ClaudeAdapter);
+  const openCodeAdapterOption = yield* Effect.serviceOption(OpenCodeAdapter);
   const cursorAdapterOption = yield* Effect.serviceOption(CursorAdapter);
+  const redClawAdapterOption = yield* Effect.serviceOption(RedClawAdapter);
   const adapters =
     options?.adapters !== undefined
       ? options.adapters
-      : [
-          yield* CodexAdapter,
-          yield* ClaudeAdapter,
-          yield* OpenCodeAdapter,
-          ...(cursorAdapterOption._tag === "Some" ? [cursorAdapterOption.value] : []),
-        ];
+      : isRemoteBuilderMode(mode)
+        ? redClawAdapterOption._tag === "Some"
+          ? [redClawAdapterOption.value]
+          : []
+        : [
+            ...(codexAdapterOption._tag === "Some" ? [codexAdapterOption.value] : []),
+            ...(claudeAdapterOption._tag === "Some" ? [claudeAdapterOption.value] : []),
+            ...(openCodeAdapterOption._tag === "Some" ? [openCodeAdapterOption.value] : []),
+            ...(cursorAdapterOption._tag === "Some" ? [cursorAdapterOption.value] : []),
+          ];
   const byProvider = new Map(adapters.map((adapter) => [adapter.provider, adapter]));
 
   const getByProvider: ProviderAdapterRegistryShape["getByProvider"] = (provider) => {
@@ -56,7 +72,8 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
   } satisfies ProviderAdapterRegistryShape;
 });
 
-export const ProviderAdapterRegistryLive = Layer.effect(
-  ProviderAdapterRegistry,
-  makeProviderAdapterRegistry(),
-);
+export function makeProviderAdapterRegistryLive(options?: ProviderAdapterRegistryLiveOptions) {
+  return Layer.effect(ProviderAdapterRegistry, makeProviderAdapterRegistry(options));
+}
+
+export const ProviderAdapterRegistryLive = makeProviderAdapterRegistryLive();

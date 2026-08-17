@@ -8,6 +8,7 @@ import {
   type ModelCapabilities,
   type ModelSelection,
   type OpenCodeModelOptions,
+  type RedClawModelOptions,
   type ProviderKind,
   type ProviderModelOptions,
 } from "@t3tools/contracts";
@@ -167,6 +168,8 @@ export function normalizeProviderModelOptionsWithCapabilities(
         caps,
         modelOptions as OpenCodeModelOptions,
       );
+    case "redclaw":
+      return modelOptions as RedClawModelOptions;
   }
 }
 
@@ -278,6 +281,12 @@ export function createModelSelection(
         provider,
         model,
         ...(options ? { options: options as OpenCodeModelOptions } : {}),
+      };
+    case "redclaw":
+      return {
+        provider,
+        model,
+        ...(options ? { options: options as RedClawModelOptions } : {}),
       };
   }
 }

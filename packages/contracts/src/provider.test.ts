@@ -88,6 +88,25 @@ describe("ProviderSessionStartInput", () => {
       expect(parsed.modelSelection.options?.fastMode).toBe(true);
     }
   });
+
+  it("accepts a RedClaw agent-route selection without provider credentials", () => {
+    const parsed = decodeProviderSessionStartInput({
+      threadId: "thread-redclaw-1",
+      provider: "redclaw",
+      runtimeMode: "approval-required",
+      modelSelection: {
+        provider: "redclaw",
+        model: "client-dev-orchestrator",
+      },
+    });
+    expect(parsed.provider).toBe("redclaw");
+    expect(parsed.modelSelection).toEqual({
+      provider: "redclaw",
+      model: "client-dev-orchestrator",
+    });
+    expect(JSON.stringify(parsed)).not.toContain("apiKey");
+    expect(JSON.stringify(parsed)).not.toContain("origin");
+  });
 });
 
 describe("ProviderSendTurnInput", () => {

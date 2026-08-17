@@ -7,6 +7,7 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  KeybindingsConfigError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
@@ -16,6 +17,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  ServerSettingsError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
   ThreadId,
@@ -63,6 +65,13 @@ import {
   type SessionCredentialChange,
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
+import { guardRemoteBuilderEffect, guardRemoteBuilderStream } from "./remoteBuilderGuard.ts";
+import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "./remoteBuilderMode.ts";
+import {
+  exposeServerConfigForMode,
+  exposeServerSettingsForMode,
+  sanitizeRemoteBuilderProviders,
+} from "./remoteBuilderSanitizer.ts";
 
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
@@ -131,6 +140,7 @@ function toAuthAccessStreamEvent(
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
+      const appMode = resolveServerAppModeFromEnv();
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
@@ -509,6 +519,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           );
       };
 
+      const sanitizeSettingsReadError = (error: ServerSettingsError): ServerSettingsError =>
+        isRemoteBuilderMode(appMode)
+          ? new ServerSettingsError({
+              settingsPath: "remote-builder",
+              detail: "Unable to load remote builder settings.",
+            })
+          : error;
+
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
@@ -516,7 +534,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
 
-        return {
+        return exposeServerConfigForMode(appMode, {
           environment,
           auth,
           cwd: config.cwd,
@@ -536,8 +554,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
           },
           settings,
-        };
-      });
+        });
+      }).pipe(
+        Effect.mapError((error) => {
+          if (!isRemoteBuilderMode(appMode)) return error;
+          return Schema.is(KeybindingsConfigError)(error)
+            ? new KeybindingsConfigError({
+                configPath: "remote-builder",
+                detail: "Unable to load remote builder keybindings.",
+              })
+            : sanitizeSettingsReadError(error);
+        }),
+      );
 
       const refreshGitStatus = (cwd: string) =>
         gitStatusBroadcaster
@@ -752,36 +780,63 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.serverRefreshProviders]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverRefreshProviders,
-            providerRegistry.refresh().pipe(Effect.map((providers) => ({ providers }))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "providerRefresh",
+              providerRegistry.refresh().pipe(Effect.map((providers) => ({ providers }))),
+            ),
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverUpsertKeybinding]: (rule) =>
           observeRpcEffect(
             WS_METHODS.serverUpsertKeybinding,
-            Effect.gen(function* () {
-              const keybindingsConfig = yield* keybindings.upsertKeybindingRule(rule);
-              return { keybindings: keybindingsConfig, issues: [] };
-            }),
+            guardRemoteBuilderEffect(
+              appMode,
+              "globalSettingsMutation",
+              Effect.gen(function* () {
+                const keybindingsConfig = yield* keybindings.upsertKeybindingRule(rule);
+                return { keybindings: keybindingsConfig, issues: [] };
+              }),
+            ),
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverGetSettings]: (_input) =>
-          observeRpcEffect(WS_METHODS.serverGetSettings, serverSettings.getSettings, {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverGetSettings,
+            serverSettings.getSettings.pipe(
+              Effect.map((settings) => exposeServerSettingsForMode(appMode, settings)),
+              Effect.mapError(sanitizeSettingsReadError),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
-          observeRpcEffect(WS_METHODS.serverUpdateSettings, serverSettings.updateSettings(patch), {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverUpdateSettings,
+            guardRemoteBuilderEffect(
+              appMode,
+              "globalSettingsMutation",
+              serverSettings.updateSettings(patch),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
-            workspaceEntries.search(input).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ProjectSearchEntriesError({
-                    message: `Failed to search workspace entries: ${cause.detail}`,
-                    cause,
-                  }),
+            guardRemoteBuilderEffect(
+              appMode,
+              "workspaceBrowse",
+              workspaceEntries.search(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ProjectSearchEntriesError({
+                      message: `Failed to search workspace entries: ${cause.detail}`,
+                      cause,
+                    }),
+                ),
               ),
             ),
             { "rpc.aggregate": "workspace" },
@@ -789,33 +844,45 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.projectsWriteFile]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsWriteFile,
-            workspaceFileSystem.writeFile(input).pipe(
-              Effect.mapError((cause) => {
-                const message = Schema.is(WorkspacePathOutsideRootError)(cause)
-                  ? "Workspace file path must stay within the project root."
-                  : "Failed to write workspace file";
-                return new ProjectWriteFileError({
-                  message,
-                  cause,
-                });
-              }),
+            guardRemoteBuilderEffect(
+              appMode,
+              "workspaceWrite",
+              workspaceFileSystem.writeFile(input).pipe(
+                Effect.mapError((cause) => {
+                  const message = Schema.is(WorkspacePathOutsideRootError)(cause)
+                    ? "Workspace file path must stay within the project root."
+                    : "Failed to write workspace file";
+                  return new ProjectWriteFileError({
+                    message,
+                    cause,
+                  });
+                }),
+              ),
             ),
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.shellOpenInEditor]: (input) =>
-          observeRpcEffect(WS_METHODS.shellOpenInEditor, open.openInEditor(input), {
-            "rpc.aggregate": "workspace",
-          }),
+          observeRpcEffect(
+            WS_METHODS.shellOpenInEditor,
+            guardRemoteBuilderEffect(appMode, "openInEditor", open.openInEditor(input)),
+            {
+              "rpc.aggregate": "workspace",
+            },
+          ),
         [WS_METHODS.filesystemBrowse]: (input) =>
           observeRpcEffect(
             WS_METHODS.filesystemBrowse,
-            workspaceEntries.browse(input).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new FilesystemBrowseError({
-                    message: cause.detail,
-                    cause,
-                  }),
+            guardRemoteBuilderEffect(
+              appMode,
+              "workspaceBrowse",
+              workspaceEntries.browse(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new FilesystemBrowseError({
+                      message: cause.detail,
+                      cause,
+                    }),
+                ),
               ),
             ),
             { "rpc.aggregate": "workspace" },
@@ -823,7 +890,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.subscribeGitStatus]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeGitStatus,
-            gitStatusBroadcaster.streamStatus(input),
+            guardRemoteBuilderStream(appMode, "git", gitStatusBroadcaster.streamStatus(input)),
             {
               "rpc.aggregate": "git",
             },
@@ -831,7 +898,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.gitRefreshStatus]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitRefreshStatus,
-            gitStatusBroadcaster.refreshStatus(input.cwd),
+            guardRemoteBuilderEffect(appMode, "git", gitStatusBroadcaster.refreshStatus(input.cwd)),
             {
               "rpc.aggregate": "git",
             },
@@ -839,117 +906,178 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.gitPull]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitPull,
-            git.pullCurrentBranch(input.cwd).pipe(
-              Effect.matchCauseEffect({
-                onFailure: (cause) => Effect.failCause(cause),
-                onSuccess: (result) =>
-                  refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
-              }),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              git.pullCurrentBranch(input.cwd).pipe(
+                Effect.matchCauseEffect({
+                  onFailure: (cause) => Effect.failCause(cause),
+                  onSuccess: (result) =>
+                    refreshGitStatus(input.cwd).pipe(
+                      Effect.ignore({ log: true }),
+                      Effect.as(result),
+                    ),
+                }),
+              ),
             ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           observeRpcStream(
             WS_METHODS.gitRunStackedAction,
-            Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
-              gitManager
-                .runStackedAction(input, {
-                  actionId: input.actionId,
-                  progressReporter: {
-                    publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
-                  },
-                })
-                .pipe(
-                  Effect.matchCauseEffect({
-                    onFailure: (cause) => Queue.failCause(queue, cause),
-                    onSuccess: () =>
-                      refreshGitStatus(input.cwd).pipe(
-                        Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
-                      ),
-                  }),
-                ),
+            guardRemoteBuilderStream(
+              appMode,
+              "git",
+              Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
+                gitManager
+                  .runStackedAction(input, {
+                    actionId: input.actionId,
+                    progressReporter: {
+                      publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+                    },
+                  })
+                  .pipe(
+                    Effect.matchCauseEffect({
+                      onFailure: (cause) => Queue.failCause(queue, cause),
+                      onSuccess: () =>
+                        refreshGitStatus(input.cwd).pipe(
+                          Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
+                        ),
+                    }),
+                  ),
+              ),
             ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitResolvePullRequest]: (input) =>
-          observeRpcEffect(WS_METHODS.gitResolvePullRequest, gitManager.resolvePullRequest(input), {
-            "rpc.aggregate": "git",
-          }),
+          observeRpcEffect(
+            WS_METHODS.gitResolvePullRequest,
+            guardRemoteBuilderEffect(appMode, "git", gitManager.resolvePullRequest(input)),
+            {
+              "rpc.aggregate": "git",
+            },
+          ),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitPreparePullRequestThread,
-            gitManager
-              .preparePullRequestThread(input)
-              .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              gitManager
+                .preparePullRequestThread(input)
+                .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitListBranches]: (input) =>
-          observeRpcEffect(WS_METHODS.gitListBranches, git.listBranches(input), {
-            "rpc.aggregate": "git",
-          }),
+          observeRpcEffect(
+            WS_METHODS.gitListBranches,
+            guardRemoteBuilderEffect(appMode, "git", git.listBranches(input)),
+            {
+              "rpc.aggregate": "git",
+            },
+          ),
         [WS_METHODS.gitCreateWorktree]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitCreateWorktree,
-            git.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              git.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitRemoveWorktree]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitRemoveWorktree,
-            git.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              git.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitCreateBranch]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitCreateBranch,
-            git.createBranch(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              git.createBranch(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitCheckout]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitCheckout,
-            Effect.scoped(git.checkoutBranch(input)).pipe(
-              Effect.tap(() => refreshGitStatus(input.cwd)),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              Effect.scoped(git.checkoutBranch(input)).pipe(
+                Effect.tap(() => refreshGitStatus(input.cwd)),
+              ),
             ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.gitInit]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitInit,
-            git.initRepo(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            guardRemoteBuilderEffect(
+              appMode,
+              "git",
+              git.initRepo(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            ),
             { "rpc.aggregate": "git" },
           ),
         [WS_METHODS.terminalOpen]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalOpen,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.open(input)),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalWrite]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalWrite, terminalManager.write(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalWrite,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.write(input)),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.terminalResize]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalResize, terminalManager.resize(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalResize,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.resize(input)),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.terminalClear]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalClear, terminalManager.clear(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalClear,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.clear(input)),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.terminalRestart]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalRestart, terminalManager.restart(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalRestart,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.restart(input)),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.terminalClose]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalClose,
+            guardRemoteBuilderEffect(appMode, "terminal", terminalManager.close(input)),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.subscribeTerminalEvents]: (_input) =>
           observeRpcStream(
             WS_METHODS.subscribeTerminalEvents,
-            Stream.callback<TerminalEvent>((queue) =>
-              Effect.acquireRelease(
-                terminalManager.subscribe((event) => Queue.offer(queue, event)),
-                (unsubscribe) => Effect.sync(unsubscribe),
+            guardRemoteBuilderStream(
+              appMode,
+              "terminal",
+              Stream.callback<TerminalEvent>((queue) =>
+                Effect.acquireRelease(
+                  terminalManager.subscribe((event) => Queue.offer(queue, event)),
+                  (unsubscribe) => Effect.sync(unsubscribe),
+                ),
               ),
             ),
             { "rpc.aggregate": "terminal" },
@@ -963,7 +1091,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   version: 1 as const,
                   type: "keybindingsUpdated" as const,
                   payload: {
-                    issues: event.issues,
+                    issues: isRemoteBuilderMode(appMode) ? [] : event.issues,
                   },
                 })),
               );
@@ -971,7 +1099,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 Stream.map((providers) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,
-                  payload: { providers },
+                  payload: {
+                    providers: isRemoteBuilderMode(appMode)
+                      ? sanitizeRemoteBuilderProviders(providers)
+                      : providers,
+                  },
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
@@ -979,12 +1111,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 Stream.map((settings) => ({
                   version: 1 as const,
                   type: "settingsUpdated" as const,
-                  payload: { settings },
+                  payload: { settings: exposeServerSettingsForMode(appMode, settings) },
                 })),
               );
 
               yield* Effect.all(
-                [providerRegistry.refresh("codex"), providerRegistry.refresh("claudeAgent")],
+                isRemoteBuilderMode(appMode)
+                  ? [providerRegistry.refresh("redclaw")]
+                  : [providerRegistry.refresh("codex"), providerRegistry.refresh("claudeAgent")],
                 {
                   concurrency: "unbounded",
                   discard: true,

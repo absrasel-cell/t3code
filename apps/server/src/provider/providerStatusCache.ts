@@ -14,7 +14,7 @@ const decodeProviderStatusCache = Schema.decodeUnknownEffect(
 );
 
 const providerOrderRank = (provider: ServerProvider["provider"]): number => {
-  const rank = PROVIDER_CACHE_IDS.indexOf(provider);
+  const rank = PROVIDER_CACHE_IDS.findIndex((candidate) => candidate === provider);
   return rank === -1 ? Number.MAX_SAFE_INTEGER : rank;
 };
 

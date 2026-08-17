@@ -9,6 +9,7 @@
  *
  * @module RoutingTextGeneration
  */
+import { TextGenerationError } from "@t3tools/contracts";
 import { Effect, Layer, Context } from "effect";
 
 import {
@@ -51,14 +52,31 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
   const cursor = yield* CursorTextGen;
   const openCode = yield* OpenCodeTextGen;
 
+  const redClawUnsupported = (operation: string) =>
+    Effect.fail(
+      new TextGenerationError({
+        operation,
+        detail:
+          "RedClaw Git text generation is unavailable until the authenticated Client Dev BFF identity binding is implemented.",
+      }),
+    );
+  const redClaw: TextGenerationShape = {
+    generateCommitMessage: () => redClawUnsupported("generateCommitMessage"),
+    generatePrContent: () => redClawUnsupported("generatePrContent"),
+    generateBranchName: () => redClawUnsupported("generateBranchName"),
+    generateThreadTitle: () => redClawUnsupported("generateThreadTitle"),
+  };
+
   const route = (provider?: TextGenerationProvider): TextGenerationShape =>
-    provider === "claudeAgent"
-      ? claude
-      : provider === "opencode"
-        ? openCode
-        : provider === "cursor"
-          ? cursor
-          : codex;
+    provider === "redclaw"
+      ? redClaw
+      : provider === "claudeAgent"
+        ? claude
+        : provider === "opencode"
+          ? openCode
+          : provider === "cursor"
+            ? cursor
+            : codex;
 
   return {
     generateCommitMessage: (input) =>

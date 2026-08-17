@@ -21,6 +21,7 @@ import {
 import { ClaudeAI, CursorIcon, Gemini, Icon, OpenAI, OpenCodeIcon } from "../Icons";
 import { cn } from "~/lib/utils";
 import { getProviderSnapshot } from "../../providerModels";
+import { BUILDER_ENVIRONMENT } from "../../builderEnvironment.runtime";
 
 function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): option is {
   value: ProviderKind;
@@ -35,11 +36,28 @@ const PROVIDER_ICON_BY_PROVIDER: Record<ProviderPickerKind, Icon> = {
   claudeAgent: ClaudeAI,
   opencode: OpenCodeIcon,
   cursor: CursorIcon,
+  redclaw: OpenCodeIcon,
 };
 
-export const AVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(isAvailableProviderOption);
-const UNAVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter((option) => !option.available);
-const COMING_SOON_PROVIDER_OPTIONS = [{ id: "gemini", label: "Gemini", icon: Gemini }] as const;
+const REDCLAW_PROVIDER_OPTION = {
+  value: "redclaw",
+  label: "RedClaw",
+  available: true,
+} as const;
+
+export function resolveAvailableProviderOptions(isRemote: boolean) {
+  return isRemote ? [REDCLAW_PROVIDER_OPTION] : PROVIDER_OPTIONS.filter(isAvailableProviderOption);
+}
+
+export const AVAILABLE_PROVIDER_OPTIONS = resolveAvailableProviderOptions(
+  BUILDER_ENVIRONMENT.isRemote,
+);
+const UNAVAILABLE_PROVIDER_OPTIONS = BUILDER_ENVIRONMENT.isRemote
+  ? []
+  : PROVIDER_OPTIONS.filter((option) => !option.available);
+const COMING_SOON_PROVIDER_OPTIONS = BUILDER_ENVIRONMENT.isRemote
+  ? []
+  : ([{ id: "gemini", label: "Gemini", icon: Gemini }] as const);
 
 function providerIconClassName(
   provider: ProviderKind | ProviderPickerKind,
@@ -67,8 +85,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const selectedModelLabel =
     selectedProviderOptions.find((option) => option.slug === props.model)?.name ?? props.model;
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[activeProvider];
+  const remoteProviderReady =
+    !BUILDER_ENVIRONMENT.isRemote ||
+    props.providers?.some(
+      (provider) =>
+        provider.provider === "redclaw" && provider.enabled && provider.status === "ready",
+    ) === true;
+  const pickerDisabled = props.disabled || !remoteProviderReady;
   const handleModelChange = (provider: ProviderKind, value: string) => {
-    if (props.disabled) return;
+    if (pickerDisabled) return;
     if (!value) return;
     const resolvedModel = resolveSelectableModel(
       provider,
@@ -84,7 +109,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     <Menu
       open={isMenuOpen}
       onOpenChange={(open) => {
-        if (props.disabled) {
+        if (pickerDisabled) {
           setIsMenuOpen(false);
           return;
         }
@@ -102,7 +127,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56 sm:px-3",
               props.triggerClassName,
             )}
-            disabled={props.disabled}
+            disabled={pickerDisabled}
           />
         }
       >

@@ -102,7 +102,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 type InstallProviderSettings = {
-  provider: ProviderKind;
+  provider: Exclude<ProviderKind, "redclaw">;
   title: string;
   badgeLabel?: string;
   binaryPlaceholder: string;
@@ -553,6 +553,7 @@ export function GeneralSettingsPanel() {
         DEFAULT_UNIFIED_SETTINGS.providers.opencode.serverPassword ||
       settings.providers.opencode.customModels.length > 0,
     ),
+    redclaw: false,
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
@@ -561,6 +562,7 @@ export function GeneralSettingsPanel() {
     claudeAgent: "",
     cursor: "",
     opencode: "",
+    redclaw: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>

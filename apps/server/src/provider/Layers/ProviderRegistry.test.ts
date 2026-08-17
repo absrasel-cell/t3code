@@ -31,7 +31,9 @@ import {
 } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider.ts";
 import {
+  buildRedClawProviderSnapshot,
   haveProvidersChanged,
+  makeProviderRegistryLive,
   mergeProviderSnapshot,
   ProviderRegistryLive,
 } from "./ProviderRegistry.ts";
@@ -552,6 +554,66 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
     });
 
     describe("ProviderRegistryLive", () => {
+      it("builds a path-free RedClaw snapshot only from strict configuration", () => {
+        const unavailable = buildRedClawProviderSnapshot({
+          NODE_ENV: "production",
+          T3_REDXTRM_CLIENT_DEV_ORIGIN: "http://client-builder.example",
+          T3_REDXTRM_CLIENT_DEV_API_KEY: "server-only-test-key",
+          T3_REDXTRM_CLIENT_DEV_AGENT_KEY: "client-dev-orchestrator",
+        });
+        assert.strictEqual(unavailable.provider, "redclaw");
+        assert.strictEqual(unavailable.status, "disabled");
+        assert.deepStrictEqual(unavailable.models, []);
+
+        const ready = buildRedClawProviderSnapshot({
+          NODE_ENV: "production",
+          T3_REDXTRM_CLIENT_DEV_ORIGIN: "https://client-builder.example",
+          T3_REDXTRM_CLIENT_DEV_API_KEY: "server-only-test-key",
+          T3_REDXTRM_CLIENT_DEV_AGENT_KEY: "client-dev-orchestrator",
+        });
+        assert.strictEqual(ready.status, "ready");
+        assert.strictEqual(ready.models[0]?.slug, "client-dev-orchestrator");
+        assert.deepStrictEqual(ready.skills, []);
+        assert.deepStrictEqual(ready.slashCommands, []);
+        const serialized = JSON.stringify(ready);
+        assert.strictEqual(/server-only-test-key|\/home\/|\/opt\//.test(serialized), false);
+      });
+
+      it.effect("exposes only the sanitized RedClaw snapshot in remote mode", () =>
+        Effect.gen(function* () {
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const providerRegistryLayer = makeProviderRegistryLive({
+            mode: "redxtrm-remote",
+            environment: {
+              NODE_ENV: "production",
+              T3_REDXTRM_CLIENT_DEV_ORIGIN: "https://client-builder.example",
+              T3_REDXTRM_CLIENT_DEV_API_KEY: "server-only-test-key",
+              T3_REDXTRM_CLIENT_DEV_AGENT_KEY: "client-dev-orchestrator",
+            },
+          }).pipe(
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-redclaw-provider-registry-",
+              }),
+            ),
+          );
+          const runtimeServices = yield* Layer.build(providerRegistryLayer).pipe(
+            Scope.provide(scope),
+          );
+          const providers = yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry;
+            return yield* registry.getProviders;
+          }).pipe(Effect.provide(runtimeServices));
+          assert.deepStrictEqual(
+            providers.map((provider) => provider.provider),
+            ["redclaw"],
+          );
+          assert.deepStrictEqual(providers[0]?.skills, []);
+          assert.deepStrictEqual(providers[0]?.slashCommands, []);
+        }),
+      );
+
       it("treats equal provider snapshots as unchanged", () => {
         const providers = [
           {

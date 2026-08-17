@@ -107,6 +107,7 @@ function createBaseServerConfig(): ServerConfig {
           serverPassword: "",
           customModels: [],
         },
+        redclaw: { enabled: false, customModels: [] },
       },
     },
   };

@@ -21,19 +21,29 @@ import type {
   ThreadSession,
   TurnDiffSummary,
 } from "./types";
+import { BUILDER_ENVIRONMENT } from "./builderEnvironment.runtime";
+import type { BuilderMode } from "./builderEnvironment";
 
 export type ProviderPickerKind = ProviderKind;
 
-export const PROVIDER_OPTIONS: Array<{
+type ProviderPickerOption = {
   value: ProviderPickerKind;
   label: string;
   available: boolean;
-}> = [
-  { value: "codex", label: "Codex", available: true },
-  { value: "claudeAgent", label: "Claude", available: true },
-  { value: "opencode", label: "OpenCode", available: true },
-  { value: "cursor", label: "Cursor", available: true },
-];
+};
+
+export function providerOptionsForMode(mode: BuilderMode): Array<ProviderPickerOption> {
+  return mode === "redxtrm-remote"
+    ? [{ value: "redclaw", label: "RedClaw", available: true }]
+    : [
+        { value: "codex", label: "Codex", available: true },
+        { value: "claudeAgent", label: "Claude", available: true },
+        { value: "opencode", label: "OpenCode", available: true },
+        { value: "cursor", label: "Cursor", available: true },
+      ];
+}
+
+export const PROVIDER_OPTIONS = providerOptionsForMode(BUILDER_ENVIRONMENT.mode);
 
 export interface WorkLogEntry {
   id: string;

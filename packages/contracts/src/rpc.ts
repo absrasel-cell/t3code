@@ -127,10 +127,33 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
 } as const;
 
+export const RemoteBuilderRestrictedCapability = Schema.Literals([
+  "terminal",
+  "git",
+  "workspaceBrowse",
+  "workspaceWrite",
+  "openInEditor",
+  "globalSettingsMutation",
+  "providerRefresh",
+]);
+export type RemoteBuilderRestrictedCapability = typeof RemoteBuilderRestrictedCapability.Type;
+
+export class RemoteBuilderAccessDeniedError extends Schema.TaggedErrorClass<RemoteBuilderAccessDeniedError>()(
+  "RemoteBuilderAccessDeniedError",
+  {
+    capability: RemoteBuilderRestrictedCapability,
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
   success: ServerUpsertKeybindingResult,
-  error: KeybindingsConfigError,
+  error: Schema.Union([KeybindingsConfigError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
@@ -142,6 +165,7 @@ export const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
 export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
   payload: Schema.Struct({}),
   success: ServerProviderUpdatedPayload,
+  error: RemoteBuilderAccessDeniedError,
 });
 
 export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
@@ -153,134 +177,134 @@ export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
-  error: ServerSettingsError,
+  error: Schema.Union([ServerSettingsError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   payload: ProjectSearchEntriesInput,
   success: ProjectSearchEntriesResult,
-  error: ProjectSearchEntriesError,
+  error: Schema.Union([ProjectSearchEntriesError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
-  error: ProjectWriteFileError,
+  error: Schema.Union([ProjectWriteFileError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: OpenInEditorInput,
-  error: OpenError,
+  error: Schema.Union([OpenError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   payload: FilesystemBrowseInput,
   success: FilesystemBrowseResult,
-  error: FilesystemBrowseError,
+  error: Schema.Union([FilesystemBrowseError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsSubscribeGitStatusRpc = Rpc.make(WS_METHODS.subscribeGitStatus, {
   payload: GitStatusInput,
   success: GitStatusStreamEvent,
-  error: GitManagerServiceError,
+  error: Schema.Union([GitManagerServiceError, RemoteBuilderAccessDeniedError]),
   stream: true,
 });
 
 export const WsGitPullRpc = Rpc.make(WS_METHODS.gitPull, {
   payload: GitPullInput,
   success: GitPullResult,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitRefreshStatusRpc = Rpc.make(WS_METHODS.gitRefreshStatus, {
   payload: GitStatusInput,
   success: GitStatusResult,
-  error: GitManagerServiceError,
+  error: Schema.Union([GitManagerServiceError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
   payload: GitRunStackedActionInput,
   success: GitActionProgressEvent,
-  error: GitManagerServiceError,
+  error: Schema.Union([GitManagerServiceError, RemoteBuilderAccessDeniedError]),
   stream: true,
 });
 
 export const WsGitResolvePullRequestRpc = Rpc.make(WS_METHODS.gitResolvePullRequest, {
   payload: GitPullRequestRefInput,
   success: GitResolvePullRequestResult,
-  error: GitManagerServiceError,
+  error: Schema.Union([GitManagerServiceError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePullRequestThread, {
   payload: GitPreparePullRequestThreadInput,
   success: GitPreparePullRequestThreadResult,
-  error: GitManagerServiceError,
+  error: Schema.Union([GitManagerServiceError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitListBranchesRpc = Rpc.make(WS_METHODS.gitListBranches, {
   payload: GitListBranchesInput,
   success: GitListBranchesResult,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitCreateWorktreeRpc = Rpc.make(WS_METHODS.gitCreateWorktree, {
   payload: GitCreateWorktreeInput,
   success: GitCreateWorktreeResult,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitRemoveWorktreeRpc = Rpc.make(WS_METHODS.gitRemoveWorktree, {
   payload: GitRemoveWorktreeInput,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitCreateBranchRpc = Rpc.make(WS_METHODS.gitCreateBranch, {
   payload: GitCreateBranchInput,
   success: GitCreateBranchResult,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitCheckoutRpc = Rpc.make(WS_METHODS.gitCheckout, {
   payload: GitCheckoutInput,
   success: GitCheckoutResult,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsGitInitRpc = Rpc.make(WS_METHODS.gitInit, {
   payload: GitInitInput,
-  error: GitCommandError,
+  error: Schema.Union([GitCommandError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalWriteRpc = Rpc.make(WS_METHODS.terminalWrite, {
   payload: TerminalWriteInput,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalResizeRpc = Rpc.make(WS_METHODS.terminalResize, {
   payload: TerminalResizeInput,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalClearRpc = Rpc.make(WS_METHODS.terminalClear, {
   payload: TerminalClearInput,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalRestartRpc = Rpc.make(WS_METHODS.terminalRestart, {
   payload: TerminalRestartInput,
   success: TerminalSessionSnapshot,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   payload: TerminalCloseInput,
-  error: TerminalError,
+  error: Schema.Union([TerminalError, RemoteBuilderAccessDeniedError]),
 });
 
 export const WsOrchestrationDispatchCommandRpc = Rpc.make(
@@ -333,6 +357,7 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
+  error: RemoteBuilderAccessDeniedError,
   stream: true,
 });
 
