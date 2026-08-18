@@ -18,10 +18,12 @@ try {
       ? Object.keys(body).toSorted()
       : [];
   const isExpectedBody =
-    keys.length === 2 &&
+    keys.length === 3 &&
     keys[0] === "mode" &&
-    keys[1] === "status" &&
+    keys[1] === "service" &&
+    keys[2] === "status" &&
     body.status === "ok" &&
+    body.service === "t3-builder" &&
     body.mode === "redxtrm-remote";
 
   process.exit(isExpectedBody ? 0 : 1);

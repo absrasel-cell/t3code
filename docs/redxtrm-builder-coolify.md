@@ -66,11 +66,11 @@ curl --fail --show-error http://127.0.0.1:3000/api/health
 docker inspect --format '{{json .State.Health}}' redxtrm-builder
 ```
 
-The health check requires HTTP 200, `application/json`, and exactly these two
+The health check requires HTTP 200, `application/json`, and exactly these three
 fields (key ordering does not matter):
 
 ```json
-{ "status": "ok", "mode": "redxtrm-remote" }
+{ "status": "ok", "service": "t3-builder", "mode": "redxtrm-remote" }
 ```
 
 It intentionally fails on a revision that does not yet provide the dedicated
