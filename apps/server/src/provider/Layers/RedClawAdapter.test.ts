@@ -225,9 +225,11 @@ describe("RedClawAdapterLive", () => {
   it("implements interrupt, approval, user-input, read, rollback, and stop semantics", async () => {
     const requestId = ApprovalRequestId.make("approval-redclaw-1");
     const paths: string[] = [];
-    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+    const bodies: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const path = new URL(String(url)).pathname;
       paths.push(path);
+      bodies.push(String(init?.body ?? ""));
       if (path.endsWith("/sessions")) return Response.json({ session: session() });
       if (path.endsWith("/thread")) {
         return Response.json({ thread: { threadId, turns: [{ id: turnId, items: [] }] } });
@@ -248,7 +250,7 @@ describe("RedClawAdapterLive", () => {
           runtimeMode: "approval-required",
         });
         yield* adapter.interruptTurn(threadId, turnId);
-        yield* adapter.respondToRequest(threadId, requestId, "accept");
+        yield* adapter.respondToRequest(threadId, requestId, "acceptForSession");
         yield* adapter.respondToUserInput(threadId, requestId, { scope: "preview" });
         const beforeRollback = yield* adapter.readThread(threadId);
         const afterRollback = yield* adapter.rollbackThread(threadId, 1);
@@ -268,6 +270,7 @@ describe("RedClawAdapterLive", () => {
       `/v1/client-dev/builder/sessions/${threadId}/rollback`,
       `/v1/client-dev/builder/sessions/${threadId}`,
     ]);
+    expect(JSON.parse(bodies[2]!)).toEqual({ decision: "accept" });
   });
 
   it("fails closed for malformed and oversized responses", async () => {

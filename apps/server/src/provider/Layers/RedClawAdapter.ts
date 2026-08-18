@@ -443,12 +443,15 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
     const respondToRequest: RedClawAdapterShape["respondToRequest"] = Effect.fn("respondToRequest")(
       function* (threadId, requestId, decision) {
         yield* requireSession(threadId);
+        // RedXTRM approvals are deliberately single-action. Never widen one
+        // browser decision into a session-long execution grant.
+        const scopedDecision = decision === "acceptForSession" ? "accept" : decision;
         const response = yield* request({
           operation: "respondToRequest",
           path: `${BUILDER_API_PREFIX}/sessions/${encodedPathPart(threadId)}/requests/${encodedPathPart(requestId)}/response`,
           method: "POST",
           schema: MutationResponse,
-          body: { decision },
+          body: { decision: scopedDecision },
           threadId,
         });
         yield* publishEvents("respondToRequest", threadId, response.events);
