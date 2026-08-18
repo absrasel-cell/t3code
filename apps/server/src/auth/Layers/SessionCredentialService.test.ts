@@ -10,6 +10,16 @@ import { SessionCredentialService } from "../Services/SessionCredentialService.t
 import { ServerSecretStoreLive } from "./ServerSecretStore.ts";
 import { SessionCredentialServiceLive } from "./SessionCredentialService.ts";
 
+const builderScope = {
+  v: 1 as const,
+  handoffJti: "33333333-3333-4333-8333-333333333333",
+  subject: "11111111-1111-4111-8111-111111111111",
+  workspaceId: "22222222-2222-4222-8222-222222222222",
+  tenantKey: "22222222-2222-4222-8222-222222222222",
+  projectKey: "domain:client-example",
+  role: "member" as const,
+};
+
 const makeServerConfigLayer = (
   overrides?: Partial<Pick<ServerConfigShape, "desktopBootstrapToken">>,
 ) =>
@@ -65,6 +75,22 @@ it.layer(NodeServices.layer)("SessionCredentialServiceLive", (it) => {
 
       expect(error._tag).toBe("SessionCredentialError");
       expect(error.message).toContain("Malformed session token");
+    }).pipe(Effect.provide(makeSessionCredentialLayer())),
+  );
+  it.effect("binds immutable builder scope into browser and one-time websocket sessions", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionCredentialService;
+      const issued = yield* sessions.issue({
+        subject: builderScope.subject,
+        role: "client",
+        builderScope,
+      });
+      const verified = yield* sessions.verify(issued.token);
+      const websocket = yield* sessions.issueWebSocketToken(issued.sessionId);
+      const verifiedWebsocket = yield* sessions.verifyWebSocketToken(websocket.token);
+
+      expect(verified.builderScope).toEqual(builderScope);
+      expect(verifiedWebsocket.builderScope).toEqual(builderScope);
     }).pipe(Effect.provide(makeSessionCredentialLayer())),
   );
   it.effect("verifies session tokens against the Effect clock", () =>

@@ -1,15 +1,29 @@
-import { ApprovalRequestId, ThreadId, TurnId, type ProviderSession } from "@t3tools/contracts";
-import { Effect, Result } from "effect";
+import {
+  ApprovalRequestId,
+  AuthSessionId,
+  type BuilderSessionScope,
+  ProjectId,
+  REDCLAW_BUILDER_SCOPE_AUDIENCE,
+  REDCLAW_BUILDER_SCOPE_ISSUER,
+  REDCLAW_BUILDER_SCOPE_KEY_ID,
+  ThreadId,
+  TurnId,
+  type ProviderSession,
+} from "@t3tools/contracts";
+import { DateTime, Effect, Layer, Option, Result } from "effect";
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { RedClawAdapter } from "../Services/RedClawAdapter.ts";
 import type { RedClawConfig } from "../redclawConfig.ts";
 import { makeRedClawAdapterLive, type RedClawFetch } from "./RedClawAdapter.ts";
+import { BuilderScopeRepository } from "../../persistence/Services/BuilderScopes.ts";
 
 const config: RedClawConfig = {
   origin: "https://client-builder.example",
   apiKey: "server-only-test-key",
   agentKey: "client-dev-orchestrator",
+  scopeSigningSecret: Buffer.from("test-redclaw-scope-secret-at-least-32-bytes", "utf8"),
   timeoutMs: 100,
   maxResponseBytes: 4_096,
 };
@@ -17,6 +31,35 @@ const config: RedClawConfig = {
 const threadId = ThreadId.make("thread-redclaw-1");
 const turnId = TurnId.make("turn-redclaw-1");
 const now = "2026-08-17T12:00:00.000Z";
+const projectId = ProjectId.make("project-redclaw-1");
+const authSessionId = AuthSessionId.make("auth-session-redclaw-1");
+const builderScope: BuilderSessionScope = {
+  v: 1,
+  handoffJti: "33333333-3333-4333-8333-333333333333",
+  subject: "11111111-1111-4111-8111-111111111111",
+  workspaceId: "22222222-2222-4222-8222-222222222222",
+  tenantKey: "22222222-2222-4222-8222-222222222222",
+  projectKey: "domain:client-example",
+  role: "member",
+};
+const builderScopeLayer = Layer.succeed(BuilderScopeRepository, {
+  bindProject: () => Effect.succeed(true),
+  bindThread: () => Effect.succeed(true),
+  getProject: () => Effect.succeed(Option.none()),
+  getThread: (requestedThreadId) =>
+    Effect.succeed(
+      requestedThreadId === threadId
+        ? Option.some({
+            threadId,
+            projectId,
+            authSessionId,
+            scope: builderScope,
+            createdAt: DateTime.makeUnsafe(now),
+          })
+        : Option.none(),
+    ),
+  listThreadIds: () => Effect.succeed([threadId]),
+});
 
 function session(overrides: Partial<ProviderSession> = {}): ProviderSession {
   return {
@@ -37,7 +80,12 @@ function runWithAdapter<A, E>(
   effect: Effect.Effect<A, E, RedClawAdapter>,
 ) {
   return Effect.runPromise(
-    effect.pipe(Effect.provide(makeRedClawAdapterLive(config, { fetchImpl })), Effect.scoped),
+    effect.pipe(
+      Effect.provide(
+        makeRedClawAdapterLive(config, { fetchImpl }).pipe(Layer.provide(builderScopeLayer)),
+      ),
+      Effect.scoped,
+    ),
   );
 }
 
@@ -65,12 +113,12 @@ describe("RedClawAdapterLive", () => {
           provider: "redclaw",
           cwd: "/local/project",
           modelSelection: { provider: "redclaw", model: "client-dev-orchestrator" },
-          runtimeMode: "approval-required",
+          runtimeMode: "full-access",
         });
         const turn = yield* adapter.sendTurn({
           threadId,
           input: "Build the approved change.",
-          modelSelection: { provider: "redclaw", model: "client-dev-builder" },
+          modelSelection: { provider: "redclaw", model: "client-dev-orchestrator" },
         });
         const sessions = yield* adapter.listSessions();
         return { started, turn, sessions };
@@ -79,6 +127,8 @@ describe("RedClawAdapterLive", () => {
 
     expect(result.started.cwd).toBe("/local/project");
     expect(result.started.cwd).not.toContain("internal");
+    expect(result.started.runtimeMode).toBe("approval-required");
+    expect(result.started.model).toBe("client-dev-orchestrator");
     expect(result.turn).toEqual({ threadId, turnId });
     expect(result.sessions).toHaveLength(1);
 
@@ -88,9 +138,52 @@ describe("RedClawAdapterLive", () => {
       Authorization: `Bearer ${config.apiKey}`,
       "X-Client-Agent-Key": config.agentKey,
     });
+    expect(
+      requestInits.every((init) =>
+        Boolean(init.headers && "X-RedXTRM-Builder-Scope" in init.headers),
+      ),
+    ).toBe(true);
+    const scopeToken = String(
+      (firstInit.headers as Record<string, string>)["X-RedXTRM-Builder-Scope"],
+    );
+    const [headerPart, payloadPart, signaturePart] = scopeToken.split(".") as [
+      string,
+      string,
+      string,
+    ];
+    expect(JSON.parse(Buffer.from(headerPart, "base64url").toString("utf8"))).toEqual({
+      alg: "HS256",
+      typ: "JWT",
+      kid: REDCLAW_BUILDER_SCOPE_KEY_ID,
+    });
+    expect(JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"))).toMatchObject({
+      v: 1,
+      iss: REDCLAW_BUILDER_SCOPE_ISSUER,
+      aud: REDCLAW_BUILDER_SCOPE_AUDIENCE,
+      sid: authSessionId,
+      handoffJti: builderScope.handoffJti,
+      sub: builderScope.subject,
+      workspaceId: builderScope.workspaceId,
+      tenantKey: builderScope.tenantKey,
+      projectKey: builderScope.projectKey,
+      role: builderScope.role,
+      threadId,
+    });
+    expect(signaturePart).toBe(
+      createHmac("sha256", Buffer.from(config.scopeSigningSecret))
+        .update(`${headerPart}.${payloadPart}`, "utf8")
+        .digest("base64url"),
+    );
     expect(firstInit.headers).toHaveProperty("Idempotency-Key");
+    expect(JSON.parse(String(firstInit.body))).toMatchObject({
+      runtimeMode: "approval-required",
+      agentRoute: "client-dev-orchestrator",
+    });
     const turnInit = requestInits[1]!;
     expect(turnInit.headers).toHaveProperty("Idempotency-Key");
+    expect(JSON.parse(String(turnInit.body))).toMatchObject({
+      agentRoute: "client-dev-orchestrator",
+    });
     expect(String(firstInit.body)).not.toContain(config.apiKey);
     expect(String(firstInit.body)).not.toContain("/local/project");
     expect(JSON.stringify(result)).not.toContain(config.apiKey);
@@ -317,7 +410,14 @@ describe("RedClawAdapterLive", () => {
             runtimeMode: "approval-required",
           }),
         );
-      }).pipe(Effect.provide(makeRedClawAdapterLive(timeoutConfig, { fetchImpl })), Effect.scoped),
+      }).pipe(
+        Effect.provide(
+          makeRedClawAdapterLive(timeoutConfig, { fetchImpl }).pipe(
+            Layer.provide(builderScopeLayer),
+          ),
+        ),
+        Effect.scoped,
+      ),
     );
     expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {

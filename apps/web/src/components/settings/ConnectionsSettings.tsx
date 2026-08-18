@@ -57,6 +57,7 @@ import {
   type ServerPairingLinkRecord,
 } from "~/environments/primary";
 import type { WsRpcClient } from "~/rpc/wsRpcClient";
+import { BUILDER_ENVIRONMENT } from "../../builderEnvironment.runtime";
 import {
   type SavedEnvironmentRecord,
   type SavedEnvironmentRuntimeState,
@@ -752,6 +753,22 @@ function SavedBackendListRow({
 }
 
 export function ConnectionsSettings() {
+  if (BUILDER_ENVIRONMENT.isRemote) {
+    return (
+      <SettingsPageContainer>
+        <SettingsSection title="Dashboard-managed access">
+          <SettingsRow
+            description="This environment is connected and authorized by your RedXTRM dashboard. Pairing links, owner tools, and additional backend environments are disabled."
+            title="Secure managed connection"
+          />
+        </SettingsSection>
+      </SettingsPageContainer>
+    );
+  }
+  return <LocalConnectionsSettings />;
+}
+
+function LocalConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const [currentSessionRole, setCurrentSessionRole] = useState<"owner" | "client" | null>(
     desktopBridge ? "owner" : null,

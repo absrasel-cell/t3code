@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 import { AuthSessionId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { BuilderSessionScope } from "./builderHandoff.ts";
 
 /**
  * Declares the server's overall authentication posture.
@@ -262,5 +263,6 @@ export const AuthSessionState = Schema.Struct({
   role: Schema.optionalKey(AuthSessionRole),
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
+  builderScope: Schema.optionalKey(BuilderSessionScope),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;

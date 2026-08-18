@@ -1,4 +1,9 @@
-import { AuthSessionId, type AuthClientMetadata, type AuthClientSession } from "@t3tools/contracts";
+import {
+  AuthSessionId,
+  BuilderSessionScope,
+  type AuthClientMetadata,
+  type AuthClientSession,
+} from "@t3tools/contracts";
 import { Clock, DateTime, Duration, Effect, Layer, PubSub, Ref, Schema, Stream } from "effect";
 import { Option } from "effect";
 
@@ -35,6 +40,7 @@ const SessionClaims = Schema.Struct({
   method: Schema.Literals(["browser-session-cookie", "bearer-session-token"]),
   iat: Schema.Number,
   exp: Schema.Number,
+  builderScope: Schema.optional(BuilderSessionScope),
 });
 type SessionClaims = typeof SessionClaims.Type;
 
@@ -79,6 +85,24 @@ function toAuthClientSession(input: Omit<AuthClientSession, "current">): AuthCli
     ...input,
     current: false,
   };
+}
+
+function sameBuilderScope(
+  left: BuilderSessionScope | null | undefined,
+  right: BuilderSessionScope | null | undefined,
+): boolean {
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return left == null && right == null;
+  }
+  return (
+    left.v === right.v &&
+    left.handoffJti === right.handoffJti &&
+    left.subject === right.subject &&
+    left.workspaceId === right.workspaceId &&
+    left.tenantKey === right.tenantKey &&
+    left.projectKey === right.projectKey &&
+    left.role === right.role
+  );
 }
 
 export const makeSessionCredentialService = Effect.gen(function* () {
@@ -208,6 +232,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         method: input?.method ?? "browser-session-cookie",
         iat: issuedAt.epochMilliseconds,
         exp: expiresAt.epochMilliseconds,
+        ...(input?.builderScope ? { builderScope: input.builderScope } : {}),
       };
       const encodedPayload = base64UrlEncode(JSON.stringify(claims));
       const signature = signPayload(encodedPayload, signingSecret);
@@ -227,6 +252,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         },
         issuedAt,
         expiresAt,
+        builderScope: input?.builderScope ?? null,
       });
       yield* emitUpsert(
         toAuthClientSession({
@@ -249,6 +275,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         client,
         expiresAt: expiresAt,
         role: claims.role,
+        ...(claims.builderScope ? { builderScope: claims.builderScope } : {}),
       } satisfies IssuedSession;
     }).pipe(Effect.mapError(toSessionCredentialError("Failed to issue session credential.")));
 
@@ -296,6 +323,11 @@ export const makeSessionCredentialService = Effect.gen(function* () {
           message: "Session token revoked.",
         });
       }
+      if (!sameBuilderScope(claims.builderScope, row.value.builderScope)) {
+        return yield* new SessionCredentialError({
+          message: "Session scope binding mismatch.",
+        });
+      }
 
       return {
         sessionId: claims.sid,
@@ -305,6 +337,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         expiresAt: DateTime.makeUnsafe(claims.exp),
         subject: claims.sub,
         role: claims.role,
+        ...(row.value.builderScope ? { builderScope: row.value.builderScope } : {}),
       } satisfies VerifiedSession;
     }).pipe(
       Effect.mapError((cause) =>
@@ -399,6 +432,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         expiresAt: row.value.expiresAt,
         subject: row.value.subject,
         role: row.value.role,
+        ...(row.value.builderScope ? { builderScope: row.value.builderScope } : {}),
       } satisfies VerifiedSession;
     }).pipe(
       Effect.mapError((cause) =>

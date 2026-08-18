@@ -7,6 +7,9 @@
  * credentials or direct GoClaw infrastructure access.
  */
 import {
+  REDCLAW_BUILDER_SCOPE_AUDIENCE,
+  REDCLAW_BUILDER_SCOPE_ISSUER,
+  REDCLAW_BUILDER_SCOPE_KEY_ID,
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderTurnStartResult,
@@ -14,7 +17,8 @@ import {
   TurnId,
 } from "@t3tools/contracts";
 import { Effect, Layer, PubSub, Schema, Stream } from "effect";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { Option } from "effect";
 
 import {
   ProviderAdapterRequestError,
@@ -27,9 +31,15 @@ import type {
   ProviderThreadTurnSnapshot,
 } from "../Services/ProviderAdapter.ts";
 import type { RedClawConfig } from "../redclawConfig.ts";
+import { BuilderScopeRepository } from "../../persistence/Services/BuilderScopes.ts";
 
 const PROVIDER = "redclaw" as const;
 const BUILDER_API_PREFIX = "/v1/client-dev/builder";
+const SCOPE_TOKEN_TTL_SECONDS = 60;
+const SCOPE_TOKEN_HEADER = Buffer.from(
+  JSON.stringify({ alg: "HS256", typ: "JWT", kid: REDCLAW_BUILDER_SCOPE_KEY_ID }),
+  "utf8",
+).toString("base64url");
 
 const ProviderThreadTurnResponse = Schema.Struct({
   id: TurnId,
@@ -133,6 +143,55 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
     >();
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const fetchImpl = options?.fetchImpl ?? fetch;
+    const builderScopes = yield* BuilderScopeRepository;
+
+    const issueScopeToken = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const binding = yield* builderScopes.getThread(threadId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "authorizeScope",
+                detail: "Unable to load the builder request scope.",
+                cause,
+              }),
+          ),
+        );
+        if (Option.isNone(binding)) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "authorizeScope",
+            detail: "The thread has no authorized builder scope.",
+          });
+        }
+        const now = Math.floor(Date.now() / 1_000);
+        const payload = Buffer.from(
+          JSON.stringify({
+            v: 1,
+            iss: REDCLAW_BUILDER_SCOPE_ISSUER,
+            aud: REDCLAW_BUILDER_SCOPE_AUDIENCE,
+            sid: binding.value.authSessionId,
+            handoffJti: binding.value.scope.handoffJti,
+            sub: binding.value.scope.subject,
+            workspaceId: binding.value.scope.workspaceId,
+            tenantKey: binding.value.scope.tenantKey,
+            projectKey: binding.value.scope.projectKey,
+            role: binding.value.scope.role,
+            threadId,
+            iat: now,
+            nbf: now,
+            exp: now + SCOPE_TOKEN_TTL_SECONDS,
+            jti: randomUUID(),
+          }),
+          "utf8",
+        ).toString("base64url");
+        const signingInput = `${SCOPE_TOKEN_HEADER}.${payload}`;
+        const signature = createHmac("sha256", Buffer.from(config.scopeSigningSecret))
+          .update(signingInput, "utf8")
+          .digest("base64url");
+        return `${signingInput}.${signature}`;
+      });
 
     const request = <S extends Schema.Top>(input: {
       readonly operation: string;
@@ -141,41 +200,45 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
       readonly schema: S;
       readonly body?: unknown;
       readonly idempotencyKey?: string;
+      readonly threadId: ThreadId;
     }): Effect.Effect<S["Type"], ProviderAdapterRequestError, S["DecodingServices"]> => {
-      const responseBody = Effect.tryPromise({
-        try: async () => {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), config.timeoutMs);
-          try {
-            const response = await fetchImpl(`${config.origin}${input.path}`, {
-              method: input.method,
-              headers: {
-                Authorization: `Bearer ${config.apiKey}`,
-                "X-Client-Agent-Key": config.agentKey,
-                Accept: "application/json",
-                ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
-                ...(input.body === undefined ? {} : { "Content-Type": "application/json" }),
-              },
-              ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
-              cache: "no-store",
-              redirect: "error",
-              signal: controller.signal,
-            });
-            if (!response.ok) {
-              throw new Error(`request returned HTTP ${response.status}`);
+      const responseBody = Effect.flatMap(issueScopeToken(input.threadId), (scopeToken) =>
+        Effect.tryPromise({
+          try: async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+            try {
+              const response = await fetchImpl(`${config.origin}${input.path}`, {
+                method: input.method,
+                headers: {
+                  Authorization: `Bearer ${config.apiKey}`,
+                  "X-Client-Agent-Key": config.agentKey,
+                  "X-RedXTRM-Builder-Scope": scopeToken,
+                  Accept: "application/json",
+                  ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
+                  ...(input.body === undefined ? {} : { "Content-Type": "application/json" }),
+                },
+                ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
+                cache: "no-store",
+                redirect: "error",
+                signal: controller.signal,
+              });
+              if (!response.ok) {
+                throw new Error(`request returned HTTP ${response.status}`);
+              }
+              return readBoundedBody(response, config.maxResponseBytes);
+            } finally {
+              clearTimeout(timer);
             }
-            return readBoundedBody(response, config.maxResponseBytes);
-          } finally {
-            clearTimeout(timer);
-          }
-        },
-        catch: (cause) =>
-          new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: input.operation,
-            detail: safeRequestDetail(input.operation, cause),
-          }),
-      });
+          },
+          catch: (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: input.operation,
+              detail: safeRequestDetail(input.operation, cause),
+            }),
+        }),
+      );
       return Effect.flatMap(responseBody, (body) =>
         Schema.decodeUnknownEffect(Schema.fromJsonString(input.schema))(body).pipe(
           Effect.mapError(
@@ -272,10 +335,11 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           method: "POST",
           schema: StartSessionResponse,
           idempotencyKey: `redclaw-start-${createHash("sha256").update(input.threadId).digest("hex").slice(0, 32)}`,
+          threadId: input.threadId,
           body: {
             threadId: input.threadId,
-            runtimeMode: input.runtimeMode,
-            agentRoute: input.modelSelection?.model,
+            runtimeMode: "approval-required",
+            agentRoute: config.agentKey,
             resumeCursor: input.resumeCursor,
           },
         });
@@ -289,8 +353,9 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
         // browser. Keep only the T3-side project cwd supplied to this adapter.
         const session: ProviderSession = {
           ...remoteSession,
+          runtimeMode: "approval-required",
           ...(input.cwd ? { cwd: input.cwd } : { cwd: undefined }),
-          ...(input.modelSelection ? { model: input.modelSelection.model } : {}),
+          model: config.agentKey,
         };
         sessions.set(input.threadId, session);
         yield* publishEvents("startSession", input.threadId, response.events);
@@ -310,7 +375,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
       const turnBody = {
         input: input.input,
         attachments: input.attachments ?? [],
-        agentRoute: input.modelSelection?.model ?? current.model,
+        agentRoute: config.agentKey,
         interactionMode: input.interactionMode,
       };
       const fingerprint = createHash("sha256")
@@ -327,6 +392,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
         schema: SendTurnResponse,
         body: turnBody,
         idempotencyKey,
+        threadId: input.threadId,
       });
       if (response.turn.threadId !== input.threadId) {
         return yield* new ProviderAdapterValidationError({
@@ -338,7 +404,12 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
       yield* validateEvents("sendTurn", input.threadId, response.events);
       if (response.session) {
         const session = yield* validateSession("sendTurn", input.threadId, response.session);
-        sessions.set(input.threadId, { ...session, cwd: current.cwd });
+        sessions.set(input.threadId, {
+          ...session,
+          runtimeMode: "approval-required",
+          model: config.agentKey,
+          cwd: current.cwd,
+        });
       }
       yield* publishEvents("sendTurn", input.threadId, response.events);
       if (pendingTurnIdempotency.get(input.threadId)?.key === idempotencyKey) {
@@ -356,6 +427,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           method: "POST",
           schema: MutationResponse,
           body: { turnId },
+          threadId,
         });
         yield* validateEvents("interruptTurn", threadId, response.events);
         if (response.session) {
@@ -377,6 +449,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           method: "POST",
           schema: MutationResponse,
           body: { decision },
+          threadId,
         });
         yield* publishEvents("respondToRequest", threadId, response.events);
       },
@@ -392,6 +465,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
         method: "POST",
         schema: MutationResponse,
         body: { answers },
+        threadId,
       });
       yield* publishEvents("respondToUserInput", threadId, response.events);
     });
@@ -404,6 +478,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           path: `${BUILDER_API_PREFIX}/sessions/${encodedPathPart(threadId)}`,
           method: "DELETE",
           schema: MutationResponse,
+          threadId,
         });
         yield* publishEvents("stopSession", threadId, response.events);
         sessions.delete(threadId);
@@ -425,6 +500,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           path: `${BUILDER_API_PREFIX}/sessions/${encodedPathPart(threadId)}/thread`,
           method: "GET",
           schema: ReadThreadResponse,
+          threadId,
         });
         if (response.thread.threadId !== threadId) {
           return yield* new ProviderAdapterValidationError({
@@ -457,6 +533,7 @@ function makeRedClawAdapter(config: RedClawConfig, options?: RedClawAdapterLiveO
           method: "POST",
           schema: ReadThreadResponse,
           body: { numTurns },
+          threadId,
         });
         if (response.thread.threadId !== threadId) {
           return yield* new ProviderAdapterValidationError({

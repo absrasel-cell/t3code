@@ -1,13 +1,15 @@
-const DEFAULT_TIMEOUT_MS = 20_000;
-const MAX_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 15 * 60_000;
+const MAX_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 128 * 1024;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const AGENT_KEY_PATTERN = /^[a-zA-Z0-9_-]{3,80}$/;
+const SCOPE_SECRET_MIN_BYTES = 32;
 
 export interface RedClawConfig {
   readonly origin: string;
   readonly apiKey: string;
   readonly agentKey: string;
+  readonly scopeSigningSecret: Uint8Array;
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
 }
@@ -34,7 +36,16 @@ export function resolveRedClawConfig(
   const origin = environment.T3_REDXTRM_CLIENT_DEV_ORIGIN?.trim();
   const apiKey = environment.T3_REDXTRM_CLIENT_DEV_API_KEY?.trim();
   const agentKey = environment.T3_REDXTRM_CLIENT_DEV_AGENT_KEY?.trim();
-  if (!origin || !apiKey || !agentKey || !AGENT_KEY_PATTERN.test(agentKey)) {
+  const scopeSigningSecret = environment.T3_REDXTRM_CLIENT_DEV_SCOPE_SECRET;
+  if (
+    !origin ||
+    !apiKey ||
+    !agentKey ||
+    !AGENT_KEY_PATTERN.test(agentKey) ||
+    !scopeSigningSecret ||
+    scopeSigningSecret !== scopeSigningSecret.trim() ||
+    Buffer.byteLength(scopeSigningSecret, "utf8") < SCOPE_SECRET_MIN_BYTES
+  ) {
     return undefined;
   }
 
@@ -49,7 +60,15 @@ export function resolveRedClawConfig(
     environment.NODE_ENV !== "production" &&
     parsedOrigin.protocol === "http:" &&
     isLoopbackHost(parsedOrigin.hostname);
-  if (parsedOrigin.protocol !== "https:" && !allowsLoopbackHttp) {
+  const allowsPrivateBuilderHttp =
+    environment.T3_REDXTRM_CLIENT_DEV_ALLOW_PRIVATE_HTTP === "1" &&
+    parsedOrigin.protocol === "http:" &&
+    parsedOrigin.hostname === "bff" &&
+    parsedOrigin.port === "8080" &&
+    parsedOrigin.pathname === "/" &&
+    !parsedOrigin.search &&
+    !parsedOrigin.hash;
+  if (parsedOrigin.protocol !== "https:" && !allowsLoopbackHttp && !allowsPrivateBuilderHttp) {
     return undefined;
   }
   if (parsedOrigin.username || parsedOrigin.password) {
@@ -60,6 +79,7 @@ export function resolveRedClawConfig(
     origin: parsedOrigin.origin,
     apiKey,
     agentKey,
+    scopeSigningSecret: Buffer.from(scopeSigningSecret, "utf8"),
     timeoutMs: parseBoundedInteger(
       environment.T3_REDXTRM_CLIENT_DEV_TIMEOUT_MS,
       DEFAULT_TIMEOUT_MS,

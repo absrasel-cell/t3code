@@ -25,6 +25,9 @@ import {
   SessionCredentialService,
 } from "../Services/SessionCredentialService.ts";
 import { AuthControlPlaneLive, AuthCoreLive } from "./AuthControlPlane.ts";
+import { resolveBuilderHandoffConfig } from "../builderHandoffConfig.ts";
+import type { BuilderHandoffConfig } from "../builderHandoffConfig.ts";
+import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "../../remoteBuilderMode.ts";
 
 type BootstrapExchangeResult = {
   readonly response: AuthBootstrapResult;
@@ -59,12 +62,36 @@ function parseBearerToken(request: HttpServerRequest.HttpServerRequest): string 
   return token.length > 0 ? token : null;
 }
 
+export function requireRemoteBuilderWebSocketToken(
+  request: HttpServerRequest.HttpServerRequest,
+  handoffConfig: BuilderHandoffConfig | undefined,
+): Effect.Effect<string, AuthError> {
+  if (!handoffConfig || request.headers.origin !== handoffConfig.audience) {
+    return Effect.fail(
+      new AuthError({
+        message: "Untrusted websocket origin.",
+        status: 403,
+      }),
+    );
+  }
+  const requestUrl = HttpServerRequest.toURL(request);
+  if (Option.isNone(requestUrl)) {
+    return Effect.fail(new AuthError({ message: "Websocket token required.", status: 401 }));
+  }
+  const websocketToken = requestUrl.value.searchParams.get(WEBSOCKET_TOKEN_QUERY_PARAM);
+  return websocketToken && websocketToken.trim().length > 0
+    ? Effect.succeed(websocketToken)
+    : Effect.fail(new AuthError({ message: "Websocket token required.", status: 401 }));
+}
+
 export const makeServerAuth = Effect.gen(function* () {
   const policy = yield* ServerAuthPolicy;
   const bootstrapCredentials = yield* BootstrapCredentialService;
   const authControlPlane = yield* AuthControlPlane;
   const sessions = yield* SessionCredentialService;
   const descriptor = yield* policy.getDescriptor();
+  const appMode = resolveServerAppModeFromEnv();
+  const handoffConfig = resolveBuilderHandoffConfig();
 
   const authenticateToken = (token: string): Effect.Effect<AuthenticatedSession, AuthError> =>
     sessions.verify(token).pipe(
@@ -81,6 +108,7 @@ export const makeServerAuth = Effect.gen(function* () {
         method: session.method,
         role: session.role,
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+        ...(session.builderScope ? { builderScope: session.builderScope } : {}),
       })),
       Effect.mapError(
         (cause) =>
@@ -104,7 +132,18 @@ export const makeServerAuth = Effect.gen(function* () {
         }),
       );
     }
-    return authenticateToken(credential);
+    return authenticateToken(credential).pipe(
+      Effect.flatMap((session) =>
+        isRemoteBuilderMode(appMode) && !session.builderScope
+          ? Effect.fail(
+              new AuthError({
+                message: "A dashboard-scoped builder session is required.",
+                status: 401,
+              }),
+            )
+          : Effect.succeed(session),
+      ),
+    );
   };
 
   const getSessionState: ServerAuthShape["getSessionState"] = (request) =>
@@ -117,6 +156,7 @@ export const makeServerAuth = Effect.gen(function* () {
             role: session.role,
             sessionMethod: session.method,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
+            ...(session.builderScope ? { builderScope: session.builderScope } : {}),
           }) satisfies AuthSessionState,
       ),
       Effect.catchTag("AuthError", () =>
@@ -206,30 +246,37 @@ export const makeServerAuth = Effect.gen(function* () {
       );
 
   const issuePairingCredential: ServerAuthShape["issuePairingCredential"] = (input) =>
-    authControlPlane
-      .createPairingLink({
-        role: input?.role ?? "client",
-        subject: input?.role === "owner" ? "owner-bootstrap" : "one-time-token",
-        ...(input?.label ? { label: input.label } : {}),
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new AuthError({
-              message: "Failed to issue pairing credential.",
-              cause,
-            }),
-        ),
-        Effect.map(
-          (issued) =>
-            ({
-              id: issued.id,
-              credential: issued.credential,
-              ...(issued.label ? { label: issued.label } : {}),
-              expiresAt: issued.expiresAt,
-            }) satisfies AuthPairingCredentialResult,
-        ),
-      );
+    isRemoteBuilderMode(appMode)
+      ? Effect.fail(
+          new AuthError({
+            message: "Generic pairing is unavailable in dashboard-managed builder mode.",
+            status: 403,
+          }),
+        )
+      : authControlPlane
+          .createPairingLink({
+            role: input?.role ?? "client",
+            subject: input?.role === "owner" ? "owner-bootstrap" : "one-time-token",
+            ...(input?.label ? { label: input.label } : {}),
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new AuthError({
+                  message: "Failed to issue pairing credential.",
+                  cause,
+                }),
+            ),
+            Effect.map(
+              (issued) =>
+                ({
+                  id: issued.id,
+                  credential: issued.credential,
+                  ...(issued.label ? { label: issued.label } : {}),
+                  expiresAt: issued.expiresAt,
+                }) satisfies AuthPairingCredentialResult,
+            ),
+          );
 
   const listPairingLinks: ServerAuthShape["listPairingLinks"] = () =>
     authControlPlane
@@ -344,6 +391,33 @@ export const makeServerAuth = Effect.gen(function* () {
   const authenticateWebSocketUpgrade: ServerAuthShape["authenticateWebSocketUpgrade"] = (request) =>
     Effect.gen(function* () {
       const requestUrl = HttpServerRequest.toURL(request);
+      if (isRemoteBuilderMode(appMode)) {
+        const websocketToken = yield* requireRemoteBuilderWebSocketToken(request, handoffConfig);
+        const session = yield* sessions.verifyWebSocketToken(websocketToken).pipe(
+          Effect.mapError(
+            (cause) =>
+              new AuthError({
+                message: "Unauthorized request.",
+                status: 401,
+                cause,
+              }),
+          ),
+        );
+        if (!session.builderScope) {
+          return yield* new AuthError({
+            message: "A dashboard-scoped builder session is required.",
+            status: 401,
+          });
+        }
+        return {
+          sessionId: session.sessionId,
+          subject: session.subject,
+          method: session.method,
+          role: session.role,
+          builderScope: session.builderScope,
+          ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+        } satisfies AuthenticatedSession;
+      }
       if (Option.isSome(requestUrl)) {
         const websocketToken = requestUrl.value.searchParams.get(WEBSOCKET_TOKEN_QUERY_PARAM);
         if (websocketToken && websocketToken.trim().length > 0) {
@@ -354,6 +428,7 @@ export const makeServerAuth = Effect.gen(function* () {
               method: session.method,
               role: session.role,
               ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+              ...(session.builderScope ? { builderScope: session.builderScope } : {}),
             })),
             Effect.mapError(
               (cause) =>

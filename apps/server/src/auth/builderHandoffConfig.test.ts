@@ -5,6 +5,7 @@ import { resolveBuilderHandoffConfig } from "./builderHandoffConfig.ts";
 const validEnvironment = {
   NODE_ENV: "production",
   T3_REDXTRM_BUILDER_ORIGIN: "https://builder.redxtrm.example",
+  T3_REDXTRM_DASHBOARD_ORIGIN: "https://redxtrm.example",
   T3_REDXTRM_BUILDER_TICKET_SECRET: "builder-test-secret-with-more-than-thirty-two-bytes",
 } as const;
 
@@ -13,6 +14,7 @@ describe("resolveBuilderHandoffConfig", () => {
     const config = resolveBuilderHandoffConfig(validEnvironment);
 
     expect(config?.audience).toBe("https://builder.redxtrm.example");
+    expect(config?.dashboardOrigin).toBe("https://redxtrm.example");
     expect(Buffer.from(config?.secret ?? []).toString("utf8")).toBe(
       validEnvironment.T3_REDXTRM_BUILDER_TICKET_SECRET,
     );
@@ -38,6 +40,7 @@ describe("resolveBuilderHandoffConfig", () => {
         ...validEnvironment,
         NODE_ENV: "development",
         T3_REDXTRM_BUILDER_ORIGIN: "http://127.0.0.1:4173",
+        T3_REDXTRM_DASHBOARD_ORIGIN: "http://127.0.0.1:3030",
       })?.audience,
     ).toBe("http://127.0.0.1:4173");
     expect(

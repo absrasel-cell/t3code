@@ -3,7 +3,9 @@ import {
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
+  DEFAULT_MODEL_BY_PROVIDER,
   EventId,
+  type BuilderSessionScope,
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -16,6 +18,7 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
+  type ProjectId,
   ProjectWriteFileError,
   ServerSettingsError,
   OrchestrationReplayEventsError,
@@ -56,6 +59,7 @@ import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptR
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
+import type { AuthenticatedSession } from "./auth/Services/ServerAuth.ts";
 import {
   BootstrapCredentialService,
   type BootstrapCredentialChange,
@@ -67,11 +71,14 @@ import {
 import { respondToAuthError } from "./auth/http.ts";
 import { guardRemoteBuilderEffect, guardRemoteBuilderStream } from "./remoteBuilderGuard.ts";
 import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "./remoteBuilderMode.ts";
+import { enforceRemoteBuilderCommandPolicy } from "./remoteBuilderRuntime.ts";
 import {
   exposeServerConfigForMode,
   exposeServerSettingsForMode,
   sanitizeRemoteBuilderProviders,
 } from "./remoteBuilderSanitizer.ts";
+import { BuilderScopeRepository } from "./persistence/Services/BuilderScopes.ts";
+import { builderProjectId, sameBuilderAuthority } from "./builderSessionScope.ts";
 
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
@@ -137,10 +144,11 @@ function toAuthAccessStreamEvent(
   }
 }
 
-const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
+const makeWsRpcLayer = (authenticatedSession: AuthenticatedSession) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const appMode = resolveServerAppModeFromEnv();
+      const currentSessionId = authenticatedSession.sessionId;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
@@ -163,6 +171,13 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const serverAuth = yield* ServerAuth;
       const bootstrapCredentials = yield* BootstrapCredentialService;
       const sessions = yield* SessionCredentialService;
+      const builderScopes = yield* BuilderScopeRepository;
+      const remoteBuilderScope = isRemoteBuilderMode(appMode)
+        ? authenticatedSession.builderScope
+        : undefined;
+      const expectedBuilderProjectId = remoteBuilderScope
+        ? builderProjectId(remoteBuilderScope)
+        : undefined;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -203,6 +218,214 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               message: cause instanceof Error ? cause.message : fallbackMessage,
               cause,
             });
+
+      const builderScopeDenial = (message: string, cause?: unknown) =>
+        new OrchestrationDispatchCommandError({
+          message,
+          ...(cause === undefined ? {} : { cause }),
+        });
+
+      const requireRemoteBuilderScope = (): Effect.Effect<
+        BuilderSessionScope,
+        OrchestrationDispatchCommandError
+      > =>
+        remoteBuilderScope
+          ? Effect.succeed(remoteBuilderScope)
+          : Effect.fail(
+              builderScopeDenial("This builder session has no authorized project scope."),
+            );
+
+      const authorizeBuilderProject = (
+        projectId: ProjectId,
+      ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        return Effect.gen(function* () {
+          const scope = yield* requireRemoteBuilderScope();
+          if (projectId !== expectedBuilderProjectId) {
+            return yield* builderScopeDenial(
+              "Project access is outside this builder session scope.",
+            );
+          }
+          const binding = yield* builderScopes
+            .getProject(projectId)
+            .pipe(
+              Effect.mapError((cause) =>
+                builderScopeDenial("Unable to authorize the builder project scope.", cause),
+              ),
+            );
+          if (Option.isNone(binding) || !sameBuilderAuthority(binding.value.scope, scope)) {
+            return yield* builderScopeDenial(
+              "Project access is outside this builder session scope.",
+            );
+          }
+        });
+      };
+
+      const bindBuilderProject = (
+        projectId: ProjectId,
+      ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        return Effect.gen(function* () {
+          const scope = yield* requireRemoteBuilderScope();
+          if (projectId !== expectedBuilderProjectId) {
+            return yield* builderScopeDenial(
+              "Project access is outside this builder session scope.",
+            );
+          }
+          const bound = yield* builderScopes
+            .bindProject({ projectId, scope })
+            .pipe(
+              Effect.mapError((cause) =>
+                builderScopeDenial("Unable to bind the builder project scope.", cause),
+              ),
+            );
+          if (!bound) {
+            return yield* builderScopeDenial(
+              "Project access is outside this builder session scope.",
+            );
+          }
+        });
+      };
+
+      const authorizeBuilderThread = (
+        threadId: ThreadId,
+      ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        return Effect.gen(function* () {
+          const scope = yield* requireRemoteBuilderScope();
+          const binding = yield* builderScopes
+            .getThread(threadId)
+            .pipe(
+              Effect.mapError((cause) =>
+                builderScopeDenial("Unable to authorize the builder thread scope.", cause),
+              ),
+            );
+          if (
+            Option.isNone(binding) ||
+            binding.value.projectId !== expectedBuilderProjectId ||
+            !sameBuilderAuthority(binding.value.scope, scope)
+          ) {
+            return yield* builderScopeDenial(
+              "Thread access is outside this builder session scope.",
+            );
+          }
+        });
+      };
+
+      const bindBuilderThread = (
+        threadId: ThreadId,
+        projectId: ProjectId,
+      ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        return Effect.gen(function* () {
+          const scope = yield* requireRemoteBuilderScope();
+          yield* authorizeBuilderProject(projectId);
+          const bound = yield* builderScopes
+            .bindThread({
+              threadId,
+              projectId,
+              authSessionId: currentSessionId,
+              scope,
+            })
+            .pipe(
+              Effect.mapError((cause) =>
+                builderScopeDenial("Unable to bind the builder thread scope.", cause),
+              ),
+            );
+          if (!bound) {
+            return yield* builderScopeDenial(
+              "Thread access is outside this builder session scope.",
+            );
+          }
+        });
+      };
+
+      const authorizeBuilderCommand = (
+        command: OrchestrationCommand,
+      ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        switch (command.type) {
+          case "project.create":
+            return bindBuilderProject(command.projectId);
+          case "project.meta.update":
+          case "project.delete":
+            return authorizeBuilderProject(command.projectId);
+          case "thread.create":
+            return bindBuilderThread(command.threadId, command.projectId);
+          case "thread.turn.start":
+            return command.bootstrap?.createThread
+              ? bindBuilderThread(command.threadId, command.bootstrap.createThread.projectId)
+              : authorizeBuilderThread(command.threadId);
+          default:
+            return authorizeBuilderThread(command.threadId);
+        }
+      };
+
+      const isAuthorizedBuilderEvent = (
+        event: OrchestrationEvent,
+      ): Effect.Effect<boolean, never> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.succeed(true);
+        if (!remoteBuilderScope || !expectedBuilderProjectId) return Effect.succeed(false);
+        if (event.aggregateKind === "project") {
+          return Effect.succeed(event.aggregateId === expectedBuilderProjectId);
+        }
+        return builderScopes.getThread(ThreadId.make(event.aggregateId)).pipe(
+          Effect.map(
+            Option.match({
+              onNone: () => false,
+              onSome: (binding) =>
+                binding.projectId === expectedBuilderProjectId &&
+                sameBuilderAuthority(binding.scope, remoteBuilderScope),
+            }),
+          ),
+          Effect.catch((cause) =>
+            Effect.logWarning("failed to authorize remote builder orchestration event", {
+              cause,
+            }).pipe(Effect.as(false)),
+          ),
+        );
+      };
+
+      const filterBuilderShellSnapshot = <
+        Snapshot extends {
+          readonly projects: ReadonlyArray<{ readonly id: ProjectId }>;
+          readonly threads: ReadonlyArray<{ readonly id: ThreadId; readonly projectId: ProjectId }>;
+        },
+      >(
+        snapshot: Snapshot,
+      ): Effect.Effect<Snapshot, OrchestrationGetSnapshotError> => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.succeed(snapshot);
+        if (!remoteBuilderScope || !expectedBuilderProjectId) {
+          return Effect.fail(
+            new OrchestrationGetSnapshotError({
+              message: "This builder session has no authorized project scope.",
+              cause: currentSessionId,
+            }),
+          );
+        }
+        return builderScopes.listThreadIds(remoteBuilderScope).pipe(
+          Effect.map((threadIds) => {
+            const allowedThreads = new Set<ThreadId>(threadIds);
+            return {
+              ...snapshot,
+              projects: snapshot.projects.filter(
+                (project) => project.id === expectedBuilderProjectId,
+              ),
+              threads: snapshot.threads.filter(
+                (thread) =>
+                  thread.projectId === expectedBuilderProjectId && allowedThreads.has(thread.id),
+              ),
+            } as Snapshot;
+          }),
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationGetSnapshotError({
+                message: "Unable to authorize the builder shell snapshot.",
+                cause,
+              }),
+          ),
+        );
+      };
 
       const toBootstrapDispatchCommandCauseError = (cause: Cause.Cause<unknown>) => {
         const error = Cause.squash(cause);
@@ -519,6 +742,45 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           );
       };
 
+      const ensureRemoteBuilderProject = (): Effect.Effect<
+        void,
+        OrchestrationDispatchCommandError
+      > => {
+        if (!isRemoteBuilderMode(appMode)) return Effect.void;
+        return Effect.gen(function* () {
+          const scope = yield* requireRemoteBuilderScope();
+          const projectId = expectedBuilderProjectId;
+          if (!projectId) {
+            return yield* builderScopeDenial(
+              "This builder session has no authorized project scope.",
+            );
+          }
+          yield* bindBuilderProject(projectId);
+          const existing = yield* projectionSnapshotQuery
+            .getProjectShellById(projectId)
+            .pipe(
+              Effect.mapError((cause) =>
+                builderScopeDenial("Unable to load the builder project scope.", cause),
+              ),
+            );
+          if (Option.isSome(existing)) return;
+
+          const command: OrchestrationCommand = {
+            type: "project.create",
+            commandId: serverCommandId("remote-builder-project-create"),
+            projectId,
+            title: scope.projectKey,
+            workspaceRoot: config.cwd,
+            defaultModelSelection: {
+              provider: "redclaw",
+              model: DEFAULT_MODEL_BY_PROVIDER.redclaw,
+            },
+            createdAt: new Date().toISOString(),
+          };
+          yield* dispatchNormalizedCommand(command);
+        });
+      };
+
       const sanitizeSettingsReadError = (error: ServerSettingsError): ServerSettingsError =>
         isRemoteBuilderMode(appMode)
           ? new ServerSettingsError({
@@ -577,7 +839,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
-              const normalizedCommand = yield* normalizeDispatchCommand(command);
+              yield* authorizeBuilderCommand(command as OrchestrationCommand);
+              const normalizedCommand = enforceRemoteBuilderCommandPolicy(
+                appMode,
+                yield* normalizeDispatchCommand(command),
+              );
               const shouldStopSessionAfterArchive =
                 normalizedCommand.type === "thread.archive"
                   ? yield* projectionSnapshotQuery
@@ -642,7 +908,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getTurnDiff,
-            checkpointDiffQuery.getTurnDiff(input).pipe(
+            authorizeBuilderThread(input.threadId).pipe(
+              Effect.flatMap(() => checkpointDiffQuery.getTurnDiff(input)),
               Effect.mapError(
                 (cause) =>
                   new OrchestrationGetTurnDiffError({
@@ -656,7 +923,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getFullThreadDiff,
-            checkpointDiffQuery.getFullThreadDiff(input).pipe(
+            authorizeBuilderThread(input.threadId).pipe(
+              Effect.flatMap(() => checkpointDiffQuery.getFullThreadDiff(input)),
               Effect.mapError(
                 (cause) =>
                   new OrchestrationGetFullThreadDiffError({
@@ -671,12 +939,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.replayEvents,
             Stream.runCollect(
-              orchestrationEngine.readEvents(
-                clamp(input.fromSequenceExclusive, {
-                  maximum: Number.MAX_SAFE_INTEGER,
-                  minimum: 0,
-                }),
-              ),
+              orchestrationEngine
+                .readEvents(
+                  clamp(input.fromSequenceExclusive, {
+                    maximum: Number.MAX_SAFE_INTEGER,
+                    minimum: 0,
+                  }),
+                )
+                .pipe(Stream.filterEffect(isAuthorizedBuilderEvent)),
             ).pipe(
               Effect.map((events) => Array.from(events)),
               Effect.flatMap(enrichOrchestrationEvents),
@@ -694,7 +964,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeShell,
             Effect.gen(function* () {
+              yield* ensureRemoteBuilderProject().pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: "Unable to initialize the builder project scope.",
+                      cause,
+                    }),
+                ),
+              );
               const snapshot = yield* projectionSnapshotQuery.getShellSnapshot().pipe(
+                Effect.flatMap(filterBuilderShellSnapshot),
                 Effect.mapError(
                   (cause) =>
                     new OrchestrationGetSnapshotError({
@@ -705,6 +985,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
 
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filterEffect(isAuthorizedBuilderEvent),
                 Stream.mapEffect(toShellStreamEvent),
                 Stream.flatMap((event) =>
                   Option.isSome(event) ? Stream.succeed(event.value) : Stream.empty,
@@ -725,6 +1006,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
+              yield* authorizeBuilderThread(input.threadId).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: "Thread access is outside this builder session scope.",
+                      cause,
+                    }),
+                ),
+              );
               const [threadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(
@@ -748,6 +1038,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               }
 
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filterEffect(isAuthorizedBuilderEvent),
                 Stream.filter(
                   (event) =>
                     event.aggregateKind === "thread" &&
@@ -1157,35 +1448,41 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
-          observeRpcStreamEffect(
+          observeRpcStream(
             WS_METHODS.subscribeAuthAccess,
-            Effect.gen(function* () {
-              const initialSnapshot = yield* loadAuthAccessSnapshot();
-              const revisionRef = yield* Ref.make(1);
-              const accessChanges: Stream.Stream<
-                BootstrapCredentialChange | SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
+            guardRemoteBuilderStream(
+              appMode,
+              "accessManagement",
+              Stream.unwrap(
+                Effect.gen(function* () {
+                  const initialSnapshot = yield* loadAuthAccessSnapshot();
+                  const revisionRef = yield* Ref.make(1);
+                  const accessChanges: Stream.Stream<
+                    BootstrapCredentialChange | SessionCredentialChange
+                  > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
 
-              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
-                Stream.mapEffect((change) =>
-                  Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
-                    Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
+                  const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
+                    Stream.mapEffect((change) =>
+                      Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
+                        Effect.map((revision) =>
+                          toAuthAccessStreamEvent(change, revision, currentSessionId),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              );
+                  );
 
-              return Stream.concat(
-                Stream.make({
-                  version: 1 as const,
-                  revision: 1,
-                  type: "snapshot" as const,
-                  payload: initialSnapshot,
+                  return Stream.concat(
+                    Stream.make({
+                      version: 1 as const,
+                      revision: 1,
+                      type: "snapshot" as const,
+                      payload: initialSnapshot,
+                    }),
+                    liveEvents,
+                  );
                 }),
-                liveEvents,
-              );
-            }),
+              ),
+            ),
             { "rpc.aggregate": "auth" },
           ),
       });
@@ -1210,7 +1507,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           },
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session.sessionId).pipe(Layer.provideMerge(RpcSerialization.layerJson)),
+            makeWsRpcLayer(session).pipe(Layer.provideMerge(RpcSerialization.layerJson)),
           ),
         );
         return yield* Effect.acquireUseRelease(

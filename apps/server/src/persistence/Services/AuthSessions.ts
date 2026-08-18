@@ -1,4 +1,8 @@
-import { AuthClientMetadataDeviceType, AuthSessionId } from "@t3tools/contracts";
+import {
+  AuthClientMetadataDeviceType,
+  AuthSessionId,
+  BuilderSessionScope,
+} from "@t3tools/contracts";
 import { Option, Schema, Context } from "effect";
 import type { Effect } from "effect";
 
@@ -24,6 +28,7 @@ export const AuthSessionRecord = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  builderScope: Schema.NullOr(BuilderSessionScope),
 });
 export type AuthSessionRecord = typeof AuthSessionRecord.Type;
 
@@ -35,6 +40,7 @@ export const CreateAuthSessionInput = Schema.Struct({
   client: AuthSessionClientMetadataRecord,
   issuedAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
+  builderScope: Schema.NullOr(BuilderSessionScope),
 });
 export type CreateAuthSessionInput = typeof CreateAuthSessionInput.Type;
 

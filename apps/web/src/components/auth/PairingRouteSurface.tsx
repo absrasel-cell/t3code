@@ -9,6 +9,7 @@ import {
 } from "../../environments/primary";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { BUILDER_ENVIRONMENT } from "../../builderEnvironment.runtime";
 
 export function PairingPendingSurface() {
   return (
@@ -35,6 +36,49 @@ export function PairingPendingSurface() {
 }
 
 export function PairingRouteSurface({
+  auth,
+  initialErrorMessage,
+  onAuthenticated,
+}: {
+  auth: AuthSessionState["auth"];
+  initialErrorMessage?: string;
+  onAuthenticated: () => void;
+}) {
+  if (BUILDER_ENVIRONMENT.isRemote) {
+    return <DashboardManagedPairingSurface />;
+  }
+  return (
+    <LocalPairingRouteSurface
+      auth={auth}
+      {...(initialErrorMessage === undefined ? {} : { initialErrorMessage })}
+      onAuthenticated={onAuthenticated}
+    />
+  );
+}
+
+function DashboardManagedPairingSurface() {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10 text-foreground sm:px-6">
+      <section className="relative w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/20 sm:p-8">
+        <p className="text-[11px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+          {APP_DISPLAY_NAME}
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+          Dashboard session required
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Open this builder from your RedXTRM dashboard. Generic pairing links and manually entered
+          tokens are disabled for this managed environment.
+        </p>
+        <Button className="mt-6" onClick={() => window.location.reload()} size="sm">
+          Check session again
+        </Button>
+      </section>
+    </div>
+  );
+}
+
+function LocalPairingRouteSurface({
   auth,
   initialErrorMessage,
   onAuthenticated,

@@ -9,6 +9,7 @@ import {
   serverEnvironmentRouteLayer,
   staticAndDevRouteLayer,
   browserApiCorsLayer,
+  healthRouteLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -64,6 +65,7 @@ import {
   authPairingCredentialRouteLayer,
   authSessionRouteLayer,
   authWebSocketTokenRouteLayer,
+  builderHandoffRouteLayer,
 } from "./auth/http.ts";
 import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
@@ -79,6 +81,12 @@ import {
 } from "./orchestration/http.ts";
 import { resolveRedClawConfig } from "./provider/redclawConfig.ts";
 import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "./remoteBuilderMode.ts";
+import {
+  BuilderHandoffServiceDisabled,
+  makeBuilderHandoffServiceLive,
+} from "./auth/Layers/BuilderHandoff.ts";
+import { resolveBuilderHandoffConfig } from "./auth/builderHandoffConfig.ts";
+import { BuilderScopeRepositoryLive } from "./persistence/Layers/BuilderScopes.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -156,36 +164,33 @@ const ProviderLayerLive = Layer.unwrap(
       stream: "canonical",
     });
     const appMode = resolveServerAppModeFromEnv();
-    const adapterRegistryLayer = isRemoteBuilderMode(appMode)
-      ? (() => {
-          const redClawConfig = resolveRedClawConfig();
-          return redClawConfig
-            ? ProviderAdapterRegistryLive.pipe(
-                Layer.provide(makeRedClawAdapterLive(redClawConfig)),
-                Layer.provideMerge(ProviderSessionDirectoryLayerLive),
-              )
-            : ProviderAdapterRegistryLive.pipe(
-                Layer.provideMerge(ProviderSessionDirectoryLayerLive),
-              );
-        })()
-      : ProviderAdapterRegistryLive.pipe(
-          Layer.provide(
-            makeCodexAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
-          ),
-          Layer.provide(
-            makeClaudeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
-          ),
-          Layer.provide(
-            makeOpenCodeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
-          ),
-          Layer.provide(
-            makeCursorAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined),
-          ),
-          Layer.provideMerge(ProviderSessionDirectoryLayerLive),
-        );
-    return makeProviderServiceLive(
+    const providerServiceLayer = makeProviderServiceLive(
       canonicalEventLogger ? { canonicalEventLogger } : undefined,
-    ).pipe(
+    );
+    if (isRemoteBuilderMode(appMode)) {
+      const redClawConfig = resolveRedClawConfig();
+      const adapterRegistryLayer = redClawConfig
+        ? ProviderAdapterRegistryLive.pipe(
+            Layer.provide(
+              makeRedClawAdapterLive(redClawConfig).pipe(Layer.provide(BuilderScopeRepositoryLive)),
+            ),
+            Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+          )
+        : ProviderAdapterRegistryLive.pipe(Layer.provideMerge(ProviderSessionDirectoryLayerLive));
+      return providerServiceLayer.pipe(
+        Layer.provide(adapterRegistryLayer),
+        Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+      );
+    }
+
+    const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
+      Layer.provide(makeCodexAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined)),
+      Layer.provide(makeClaudeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined)),
+      Layer.provide(makeOpenCodeAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined)),
+      Layer.provide(makeCursorAdapterLive(nativeEventLogger ? { nativeEventLogger } : undefined)),
+      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+    );
+    return providerServiceLayer.pipe(
       Layer.provide(adapterRegistryLayer),
       Layer.provideMerge(ProviderSessionDirectoryLayerLive),
     );
@@ -193,6 +198,10 @@ const ProviderLayerLive = Layer.unwrap(
 );
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+
+const BuilderScopeRepositoryLayerLive = BuilderScopeRepositoryLive.pipe(
+  Layer.provide(PersistenceLayerLive),
+);
 
 const GitManagerLayerLive = GitManagerLive.pipe(
   Layer.provideMerge(ProjectSetupScriptRunnerLive),
@@ -225,9 +234,19 @@ const WorkspaceLayerLive = Layer.mergeAll(
   WorkspaceFileSystemLayerLive,
 );
 
-const AuthLayerLive = ServerAuthLive.pipe(
-  Layer.provideMerge(PersistenceLayerLive),
-  Layer.provide(ServerSecretStoreLive),
+const BuilderHandoffLayerLive = Layer.unwrap(
+  Effect.sync(() => {
+    const config = resolveBuilderHandoffConfig();
+    return config ? makeBuilderHandoffServiceLive(config) : BuilderHandoffServiceDisabled;
+  }),
+).pipe(Layer.provide(PersistenceLayerLive));
+
+const AuthLayerLive = Layer.merge(
+  ServerAuthLive.pipe(
+    Layer.provideMerge(PersistenceLayerLive),
+    Layer.provide(ServerSecretStoreLive),
+  ),
+  BuilderHandoffLayerLive,
 );
 
 const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
@@ -242,6 +261,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
+  Layer.provideMerge(BuilderScopeRepositoryLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(ServerSettingsLive),
@@ -272,10 +292,12 @@ export const makeRoutesLayer = Layer.mergeAll(
   authPairingCredentialRouteLayer,
   authSessionRouteLayer,
   authWebSocketTokenRouteLayer,
+  builderHandoffRouteLayer,
   attachmentsRouteLayer,
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
   otlpTracesProxyRouteLayer,
+  healthRouteLayer,
   projectFaviconRouteLayer,
   serverEnvironmentRouteLayer,
   staticAndDevRouteLayer,
@@ -327,6 +349,8 @@ export const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provideMerge(RuntimeServicesLive),
+      Layer.provideMerge(AuthLayerLive),
+      Layer.provideMerge(BuilderScopeRepositoryLayerLive),
       Layer.provideMerge(HttpServerLive),
       Layer.provide(ObservabilityLive),
       Layer.provideMerge(FetchHttpClient.layer),

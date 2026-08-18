@@ -135,6 +135,7 @@ export const RemoteBuilderRestrictedCapability = Schema.Literals([
   "openInEditor",
   "globalSettingsMutation",
   "providerRefresh",
+  "accessManagement",
 ]);
 export type RemoteBuilderRestrictedCapability = typeof RemoteBuilderRestrictedCapability.Type;
 
@@ -377,6 +378,7 @@ export const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServer
 export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   payload: Schema.Struct({}),
   success: AuthAccessStreamEvent,
+  error: RemoteBuilderAccessDeniedError,
   stream: true,
 });
 

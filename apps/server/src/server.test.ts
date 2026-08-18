@@ -105,6 +105,8 @@ import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
 import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
+import { BuilderHandoffServiceDisabled } from "./auth/Layers/BuilderHandoff.ts";
+import { BuilderScopeRepository } from "./persistence/Services/BuilderScopes.ts";
 
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");
@@ -213,6 +215,14 @@ const authTestLayer = ServerAuthLive.pipe(
   Layer.provide(SqlitePersistenceMemory),
   Layer.provide(ServerSecretStoreLive),
 );
+
+const builderScopeTestLayer = Layer.succeed(BuilderScopeRepository, {
+  bindProject: () => Effect.succeed(true),
+  bindThread: () => Effect.succeed(true),
+  getProject: () => Effect.succeed(Option.none()),
+  getThread: () => Effect.succeed(Option.none()),
+  listThreadIds: () => Effect.succeed([]),
+});
 
 const makeBrowserOtlpPayload = (spanName: string) =>
   Effect.gen(function* () {
@@ -540,6 +550,8 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provideMerge(authTestLayer),
+      Layer.provide(BuilderHandoffServiceDisabled),
+      Layer.provide(builderScopeTestLayer),
       Layer.provide(workspaceAndProjectServicesLayer),
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provide(layerConfig),
@@ -731,6 +743,21 @@ const getWsServerUrl = (
   });
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("serves the unauthenticated no-store health endpoint", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* HttpClient.get("/api/health");
+      assert.equal(response.status, 200);
+      assert.equal(response.headers["cache-control"], "no-store");
+      assert.deepEqual(yield* response.json, {
+        status: "ok",
+        service: "t3-builder",
+        mode: "local",
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("serves static index content for GET / when staticDir is configured", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

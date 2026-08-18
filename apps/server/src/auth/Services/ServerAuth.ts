@@ -10,6 +10,7 @@ import type {
   AuthSessionState,
   ServerAuthDescriptor,
   ServerAuthSessionMethod,
+  BuilderSessionScope,
   AuthWebSocketTokenResult,
 } from "@t3tools/contracts";
 import { Data, DateTime, Context } from "effect";
@@ -23,11 +24,12 @@ export interface AuthenticatedSession {
   readonly method: ServerAuthSessionMethod;
   readonly role: SessionRole;
   readonly expiresAt?: DateTime.DateTime;
+  readonly builderScope?: BuilderSessionScope;
 }
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   readonly message: string;
-  readonly status?: 400 | 401 | 403 | 500;
+  readonly status?: 400 | 401 | 403 | 409 | 415 | 500 | 503;
   readonly cause?: unknown;
 }> {}
 

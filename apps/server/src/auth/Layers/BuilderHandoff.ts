@@ -122,3 +122,7 @@ export const makeBuilderHandoffServiceLive = (config: BuilderHandoffConfig) =>
   Layer.effect(BuilderHandoffService, makeBuilderHandoffService(config)).pipe(
     Layer.provide(BuilderHandoffTicketRepositoryLive),
   );
+
+export const BuilderHandoffServiceDisabled = Layer.succeed(BuilderHandoffService, {
+  exchange: () => Effect.fail(reject("unavailable", "Builder handoff is not configured.")),
+} satisfies BuilderHandoffServiceShape);

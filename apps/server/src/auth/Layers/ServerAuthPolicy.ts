@@ -5,10 +5,12 @@ import { ServerConfig } from "../../config.ts";
 import { ServerAuthPolicy, type ServerAuthPolicyShape } from "../Services/ServerAuthPolicy.ts";
 import { resolveSessionCookieName } from "../utils.ts";
 import { isLoopbackHost, isWildcardHost } from "../../startupAccess.ts";
+import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "../../remoteBuilderMode.ts";
 
 export const makeServerAuthPolicy = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const isRemoteReachable = isWildcardHost(config.host) || !isLoopbackHost(config.host);
+  const appMode = resolveServerAppModeFromEnv();
 
   const policy =
     config.mode === "desktop"
@@ -19,8 +21,9 @@ export const makeServerAuthPolicy = Effect.gen(function* () {
         ? "remote-reachable"
         : "loopback-browser";
 
-  const bootstrapMethods: ServerAuthDescriptor["bootstrapMethods"] =
-    policy === "desktop-managed-local"
+  const bootstrapMethods: ServerAuthDescriptor["bootstrapMethods"] = isRemoteBuilderMode(appMode)
+    ? []
+    : policy === "desktop-managed-local"
       ? ["desktop-bootstrap"]
       : config.mode === "desktop" && policy === "remote-reachable"
         ? ["desktop-bootstrap", "one-time-token"]

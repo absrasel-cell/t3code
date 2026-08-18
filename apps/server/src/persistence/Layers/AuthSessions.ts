@@ -1,4 +1,4 @@
-import { AuthSessionId } from "@t3tools/contracts";
+import { AuthSessionId, BuilderSessionScope } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import { Effect, Layer, Option, Schema } from "effect";
@@ -35,6 +35,7 @@ const AuthSessionDbRow = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  builderScope: Schema.NullOr(Schema.fromJsonString(BuilderSessionScope)),
 });
 
 function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): typeof AuthSessionRecord.Type {
@@ -55,6 +56,7 @@ function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): typeof AuthSess
     expiresAt: row.expiresAt,
     lastConnectedAt: row.lastConnectedAt,
     revokedAt: row.revokedAt,
+    builderScope: row.builderScope,
   };
 }
 
@@ -85,6 +87,7 @@ const makeAuthSessionRepository = Effect.gen(function* () {
           client_browser,
           issued_at,
           expires_at,
+          builder_scope_json,
           revoked_at
         )
         VALUES (
@@ -100,6 +103,7 @@ const makeAuthSessionRepository = Effect.gen(function* () {
           ${input.client.browser},
           ${input.issuedAt},
           ${input.expiresAt},
+          ${input.builderScope === null ? null : JSON.stringify(input.builderScope)},
           NULL
         )
       `,
@@ -125,6 +129,7 @@ const makeAuthSessionRepository = Effect.gen(function* () {
           expires_at AS "expiresAt",
           last_connected_at AS "lastConnectedAt",
           revoked_at AS "revokedAt"
+          ,builder_scope_json AS "builderScope"
         FROM auth_sessions
         WHERE session_id = ${sessionId}
       `,
@@ -150,6 +155,7 @@ const makeAuthSessionRepository = Effect.gen(function* () {
           expires_at AS "expiresAt",
           last_connected_at AS "lastConnectedAt",
           revoked_at AS "revokedAt"
+          ,builder_scope_json AS "builderScope"
         FROM auth_sessions
         WHERE revoked_at IS NULL
           AND expires_at > ${now}

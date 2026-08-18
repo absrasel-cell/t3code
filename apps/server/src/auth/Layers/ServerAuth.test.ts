@@ -7,7 +7,12 @@ import { ServerConfig } from "../../config.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { BootstrapCredentialError } from "../Services/BootstrapCredentialService.ts";
 import { ServerAuth, type ServerAuthShape } from "../Services/ServerAuth.ts";
-import { ServerAuthLive, toBootstrapExchangeAuthError } from "./ServerAuth.ts";
+import {
+  requireRemoteBuilderWebSocketToken,
+  ServerAuthLive,
+  toBootstrapExchangeAuthError,
+} from "./ServerAuth.ts";
+import type { BuilderHandoffConfig } from "../builderHandoffConfig.ts";
 import { ServerSecretStoreLive } from "./ServerSecretStore.ts";
 
 const makeServerConfigLayer = (overrides?: Partial<ServerConfigShape>) =>
@@ -46,6 +51,27 @@ const requestMetadata = {
   ipAddress: "192.168.1.23",
 };
 
+const handoffConfig: BuilderHandoffConfig = {
+  audience: "https://builder.redxtrm.example",
+  dashboardOrigin: "https://redxtrm.example",
+  secret: Buffer.from("builder-test-secret-with-at-least-32-bytes", "utf8"),
+};
+
+const makeWebSocketRequest = (input: {
+  readonly url: string;
+  readonly origin?: string;
+  readonly cookie?: string;
+}): Parameters<typeof requireRemoteBuilderWebSocketToken>[0] =>
+  ({
+    url: input.url,
+    cookies: input.cookie ? { t3_session: input.cookie } : {},
+    headers: {
+      host: "builder.redxtrm.example",
+      ...(input.origin ? { origin: input.origin } : {}),
+      "x-forwarded-proto": "https",
+    },
+  }) as unknown as Parameters<typeof requireRemoteBuilderWebSocketToken>[0];
+
 it.layer(NodeServices.layer)("ServerAuthLive", (it) => {
   it.effect("maps invalid bootstrap credential failures to 401", () =>
     Effect.sync(() => {
@@ -73,6 +99,35 @@ it.layer(NodeServices.layer)("ServerAuthLive", (it) => {
 
       expect(error.status).toBe(500);
       expect(error.message).toBe("Failed to validate bootstrap credential.");
+    }),
+  );
+
+  it.effect("rejects direct cookie-only and cross-origin remote websocket upgrades", () =>
+    Effect.gen(function* () {
+      const directCookieError = yield* Effect.flip(
+        requireRemoteBuilderWebSocketToken(
+          makeWebSocketRequest({
+            url: "/ws",
+            origin: handoffConfig.audience,
+            cookie: "valid-looking-browser-cookie",
+          }),
+          handoffConfig,
+        ),
+      );
+      const crossOriginError = yield* Effect.flip(
+        requireRemoteBuilderWebSocketToken(
+          makeWebSocketRequest({
+            url: "/ws?wsToken=one-time-websocket-token",
+            origin: "https://forged.example",
+          }),
+          handoffConfig,
+        ),
+      );
+
+      expect(directCookieError.status).toBe(401);
+      expect(directCookieError.message).toContain("token required");
+      expect(crossOriginError.status).toBe(403);
+      expect(crossOriginError.message).toContain("Untrusted websocket origin");
     }),
   );
 

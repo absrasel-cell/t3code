@@ -20,6 +20,7 @@ import { makeBuilderHandoffServiceLive } from "./BuilderHandoff.ts";
 const secretText = "builder-test-secret-with-more-than-thirty-two-bytes";
 const config: BuilderHandoffConfig = {
   audience: "https://builder.redxtrm.example",
+  dashboardOrigin: "https://redxtrm.example",
   secret: Buffer.from(secretText, "utf8"),
 };
 const baseClaims: BuilderHandoffTicketClaims = {

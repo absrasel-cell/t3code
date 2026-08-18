@@ -39,6 +39,7 @@ import {
   isWildcardHost,
   issueHeadlessServeAccessInfo,
 } from "./startupAccess.ts";
+import { isRemoteBuilderMode, resolveServerAppModeFromEnv } from "./remoteBuilderMode.ts";
 
 export class ServerRuntimeStartupError extends Data.TaggedError("ServerRuntimeStartupError")<{
   readonly message: string;
@@ -248,6 +249,9 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
       ? `http://${formatHostForUrl(serverConfig.host)}:${serverConfig.port}`
       : localUrl;
   const baseTarget = serverConfig.devUrl?.toString() ?? bindUrl;
+  if (isRemoteBuilderMode(resolveServerAppModeFromEnv())) {
+    return baseTarget;
+  }
   return yield* Effect.succeed(serverConfig.mode === "desktop" ? baseTarget : undefined).pipe(
     Effect.flatMap((target) =>
       target ? Effect.succeed(target) : serverAuth.issueStartupPairingUrl(baseTarget),
@@ -430,7 +434,14 @@ export const makeServerRuntimeStartup = Effect.gen(function* () {
 
       yield* Effect.logDebug("startup phase: recording startup heartbeat");
       yield* launchStartupHeartbeat;
-      if (serverConfig.startupPresentation === "headless") {
+      if (isRemoteBuilderMode(resolveServerAppModeFromEnv())) {
+        yield* runStartupPhase(
+          "remote-builder.output",
+          Console.log(
+            "RedXTRM Builder is ready. Start a scoped session from the RedXTRM dashboard.",
+          ),
+        );
+      } else if (serverConfig.startupPresentation === "headless") {
         yield* Effect.logDebug("startup phase: headless access info");
         const accessInfo = yield* issueHeadlessServeAccessInfo();
         yield* runStartupPhase(
