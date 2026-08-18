@@ -1,9 +1,9 @@
 # RedXTRM Builder container and Coolify runbook
 
 This runbook packages the T3 server and its compiled web client into one
-container for `https://builder.redxtrm.com`. It defines the deployment artifact;
-it does not by itself complete the ticket-bound multi-tenant security gates in
-[`redxtrm-builder-port.md`](./redxtrm-builder-port.md).
+container for `https://builder.redxtrm.com`. The production container runs in
+the dedicated rootless Client Dev stack beside the private BFF. Coolify's
+Traefik proxy publishes T3 only; the BFF keeps no host port.
 
 Do not publish the builder until the POST handoff exchange, immutable
 ticket-derived HTTP/WebSocket scope, BFF re-authorization, replay rejection, and
@@ -79,23 +79,38 @@ path, so status alone is not a readiness check. The container must not be
 promoted until the route is present and returns the marker only after the
 HTTP/WebSocket server is ready.
 
-## Coolify application
+## Rootless stack and Coolify edge
 
-Create a dedicated application for the builder. Do not reuse the `redxtrm-web`
-application, its database, its volumes, or its Client Dev credentials.
+Do not create the builder inside the `redxtrm-web` application and do not expose
+the Client Dev BFF. Build a commit-pinned image with the guarded Client Dev
+release script, then start it through the rootless stack's `builder` profile.
+The builder joins only the internal `control` network and reaches the BFF as
+`http://bff:8080`; that private HTTP exception requires
+`T3_REDXTRM_CLIENT_DEV_ALLOW_PRIVATE_HTTP=1` and is rejected for any other
+origin.
 
 Configure:
 
-1. Build pack: repository Dockerfile at `/Dockerfile`.
-2. Container port: `3000`.
-3. Health path: `/api/health` with HTTP success required.
-4. Domain: `https://builder.redxtrm.com`.
-5. Persistent storage: a dedicated named volume mounted at
+1. Image: `redxtrm-t3-builder:<exact 40-character Git commit>` built by the
+   guarded rootless release script.
+2. Container port: `3000`, bound only on the reviewed host bridge address used
+   by Coolify's proxy.
+3. Health path: `/api/health` with the exact JSON contract required.
+4. Domain: `https://builder.redxtrm.com`, routed by a dedicated dynamic Traefik
+   file to the builder host bind.
+5. Persistent storage: the rootless stack's dedicated volume mounted at
    `/var/lib/t3code`.
 6. Runtime variables: the values in
-   `deploy/redxtrm-builder/.env.example`, stored in Coolify rather than Git.
+   `deploy/redxtrm-builder/.env.example`, stored in the root-owned, mode-0600
+   Client Dev stack environment rather than Git or Coolify.
 7. Build arguments: the non-secret `VITE_*` values from the local build
    example. Do not add BFF keys or ticket secrets as build arguments.
+
+The dashboard ticket secret must byte-match the T3 ticket secret. The BFF scope
+secret is a separate value shared only by T3 and the BFF. The browser never
+receives either secret. Production pins `CLIENT_DEV_BFF_AGENT_KEY` to the
+no-secret `client-dev-orchestrator` frontman; project builders receive scoped
+SecureCLI grants only through the private team delegation path.
 
 The mounted data directory must remain writable by uid/gid 1000. Empty named
 volumes inherit the image directory ownership; verify ownership explicitly when
@@ -134,8 +149,9 @@ testing handoff or WebSocket behavior. Do not weaken TLS mode as a release fix.
   issuance and routes in source; log filtering is only defense in depth.
 - Terminal remains disabled. A Vite capability flag is not authorization to
   expose a host PTY or an unproven sandbox broker.
-- Every production container must be single-tenant until persistence and all
-  HTTP/WebSocket projections are proven tenant-aware.
+- Remote persistence and every HTTP/WebSocket projection are bound to the
+  immutable ticket-derived tenant, project, user, and browser session. Do not
+  weaken those bindings to recover a failed handoff.
 - The handoff ticket is accepted only in a credential-free POST body. Never put
   it in a query string, URL fragment, redirect log, or proxy access log.
 

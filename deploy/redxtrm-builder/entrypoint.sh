@@ -15,9 +15,11 @@ missing_variables=""
 for variable_name in \
   T3_REDXTRM_BUILDER_ORIGIN \
   T3_REDXTRM_BUILDER_TICKET_SECRET \
+  T3_REDXTRM_DASHBOARD_ORIGIN \
   T3_REDXTRM_CLIENT_DEV_ORIGIN \
   T3_REDXTRM_CLIENT_DEV_API_KEY \
-  T3_REDXTRM_CLIENT_DEV_AGENT_KEY; do
+  T3_REDXTRM_CLIENT_DEV_AGENT_KEY \
+  T3_REDXTRM_CLIENT_DEV_SCOPE_SECRET; do
   if [ -z "$(printenv "$variable_name" 2>/dev/null || true)" ]; then
     missing_variables="$missing_variables $variable_name"
   fi
