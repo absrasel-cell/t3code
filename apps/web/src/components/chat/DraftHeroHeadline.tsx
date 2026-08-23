@@ -4,6 +4,7 @@ import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { LLP_CHAT_ONLY_UI } from "~/deploymentProfile";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useClientSettings } from "~/hooks/useSettings";
 import { selectProjectGroupingSettings } from "~/logicalProject";
@@ -149,13 +150,19 @@ export function DraftHeroHeadline({
             );
           })}
         </MenuRadioGroup>
-        <MenuSeparator />
-        <MenuItem onClick={openAddProject}>
-          <FolderPlusIcon />
-          New project
-        </MenuItem>
+        {LLP_CHAT_ONLY_UI ? null : (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={openAddProject}>
+              <FolderPlusIcon />
+              New project
+            </MenuItem>
+          </>
+        )}
       </MenuPopup>
     </Menu>
+  ) : LLP_CHAT_ONLY_UI ? (
+    <span className="text-muted-foreground/60">LLP project unavailable</span>
   ) : (
     <button
       type="button"
@@ -173,7 +180,7 @@ export function DraftHeroHeadline({
       ) : canChooseProject ? (
         <>{projectSelector} to start</>
       ) : (
-        <>Add a project to start</>
+        <>{LLP_CHAT_ONLY_UI ? "LLP project unavailable" : "Add a project to start"}</>
       )}
     </h1>
   );

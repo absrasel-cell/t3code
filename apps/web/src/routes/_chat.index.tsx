@@ -4,6 +4,7 @@ import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
+import { LLP_CHAT_ONLY_UI } from "../deploymentProfile";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
@@ -116,14 +117,18 @@ function NoProjectsHero() {
                 What should we work on?
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Add a project to start your first thread.
+                {LLP_CHAT_ONLY_UI
+                  ? "The LLP project registry is not available."
+                  : "Add a project to start your first thread."}
               </EmptyDescription>
-              <div className="mt-6 flex justify-center">
-                <Button size="sm" onClick={openAddProject}>
-                  <PlusIcon className="size-4" />
-                  Add project
-                </Button>
-              </div>
+              {LLP_CHAT_ONLY_UI ? null : (
+                <div className="mt-6 flex justify-center">
+                  <Button size="sm" onClick={openAddProject}>
+                    <PlusIcon className="size-4" />
+                    Add project
+                  </Button>
+                </div>
+              )}
             </EmptyHeader>
           </div>
         </Empty>

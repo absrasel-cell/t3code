@@ -18,6 +18,7 @@ import {
 } from "../auth/http.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { commandDenialReasonForDeploymentProfile } from "../deploymentProfile.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -96,6 +97,9 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
           const normalizedCommand = yield* normalizeDispatchCommand(args.payload).pipe(
             Effect.catch(() => failEnvironmentInvalidRequest("invalid_command")),
           );
+          if (commandDenialReasonForDeploymentProfile(normalizedCommand) !== undefined) {
+            return yield* failEnvironmentInvalidRequest("invalid_command");
+          }
           return yield* orchestrationEngine
             .dispatch(normalizedCommand)
             .pipe(

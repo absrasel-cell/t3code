@@ -107,6 +107,12 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
+import {
+  applyDeploymentProfileToEnvironmentDescriptor,
+  commandDenialReasonForDeploymentProfile,
+  isLlpChatOnlyDeploymentProfile,
+  isRpcMethodAllowedByDeploymentProfile,
+} from "./deploymentProfile.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -483,9 +489,12 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const relayClient = yield* RelayClient.RelayClient;
-      const authorizationError = (requiredScope: AuthEnvironmentScope) =>
+      const authorizationError = (
+        requiredScope: AuthEnvironmentScope,
+        message = `The authenticated token is missing required scope: ${requiredScope}.`,
+      ) =>
         new EnvironmentAuthorizationError({
-          message: `The authenticated token is missing required scope: ${requiredScope}.`,
+          message,
           requiredScope,
         });
       const authorizeEffect = <A, E, R>(
@@ -502,26 +511,50 @@ const makeWsRpcLayer = (
         currentSession.scopes.includes(requiredScope)
           ? stream
           : Stream.fail(authorizationError(requiredScope));
+      const authorizeDeploymentEffect = <A, E, R>(
+        method: string,
+        requiredScope: AuthEnvironmentScope,
+        effect: Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
+        isRpcMethodAllowedByDeploymentProfile(method)
+          ? effect
+          : Effect.fail(
+              authorizationError(requiredScope, `${method} is disabled by the LLP chat profile.`),
+            );
+      const authorizeDeploymentStream = <A, E, R>(
+        method: string,
+        requiredScope: AuthEnvironmentScope,
+        stream: Stream.Stream<A, E, R>,
+      ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> =>
+        isRpcMethodAllowedByDeploymentProfile(method)
+          ? stream
+          : Stream.fail(
+              authorizationError(requiredScope, `${method} is disabled by the LLP chat profile.`),
+            );
       const observeRpcEffect = <A, E, R>(
         method: string,
         effect: Effect.Effect<A, E, R>,
         traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        instrumentRpcEffect(
+      ) => {
+        const requiredScope = requiredScopeForRpcMethod(method);
+        return instrumentRpcEffect(
           method,
-          authorizeEffect(requiredScopeForRpcMethod(method), effect),
+          authorizeEffect(requiredScope, authorizeDeploymentEffect(method, requiredScope, effect)),
           traceAttributes,
         );
+      };
       const observeRpcStream = <A, E, R>(
         method: string,
         stream: Stream.Stream<A, E, R>,
         traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        instrumentRpcStream(
+      ) => {
+        const requiredScope = requiredScopeForRpcMethod(method);
+        return instrumentRpcStream(
           method,
-          authorizeStream(requiredScopeForRpcMethod(method), stream),
+          authorizeStream(requiredScope, authorizeDeploymentStream(method, requiredScope, stream)),
           traceAttributes,
         );
+      };
       const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
         method: string,
         effect: Effect.Effect<
@@ -530,12 +563,14 @@ const makeWsRpcLayer = (
           EffectContext
         >,
         traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        instrumentRpcStreamEffect(
+      ) => {
+        const requiredScope = requiredScopeForRpcMethod(method);
+        return instrumentRpcStreamEffect(
           method,
-          authorizeEffect(requiredScopeForRpcMethod(method), effect),
+          authorizeEffect(requiredScope, authorizeDeploymentEffect(method, requiredScope, effect)),
           traceAttributes,
         );
+      };
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
           ? cause
@@ -1080,7 +1115,9 @@ const makeWsRpcLayer = (
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
         );
-        const environment = yield* serverEnvironment.getDescriptor;
+        const environment = applyDeploymentProfileToEnvironmentDescriptor(
+          yield* serverEnvironment.getDescriptor,
+        );
         const auth = yield* serverAuth.getDescriptor();
 
         return {
@@ -1127,6 +1164,12 @@ const makeWsRpcLayer = (
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              const deploymentDenial = commandDenialReasonForDeploymentProfile(normalizedCommand);
+              if (deploymentDenial !== undefined) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: deploymentDenial,
+                });
+              }
               // Archive and settle both mean "done with this thread", so a
               // live provider session must not keep running background work
               // (PR monitors, dev servers, subagent fleets) after either
@@ -1955,6 +1998,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
+              if (isLlpChatOnlyDeploymentProfile() && input.resource._tag === "workspace-file") {
+                return yield* authorizationError(
+                  requiredScopeForRpcMethod(WS_METHODS.assetsCreateUrl),
+                  "Workspace file previews are disabled by the LLP chat profile.",
+                );
+              }
               if (input.resource._tag === "attachment") {
                 return yield* issueAssetUrl({ resource: input.resource });
               }

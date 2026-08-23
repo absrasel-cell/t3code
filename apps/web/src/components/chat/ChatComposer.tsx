@@ -123,6 +123,7 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { LLP_CHAT_ONLY_UI } from "../../deploymentProfile";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -3321,6 +3322,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       <CircleAlertIcon className="size-4" />
                       No provider available
                     </Button>
+                  ) : LLP_CHAT_ONLY_UI ? (
+                    <span
+                      data-llp-fixed-provider="true"
+                      className="shrink-0 px-2 text-xs font-medium text-secondary-label"
+                    >
+                      Codex · gpt-5.6-sol · high
+                    </span>
                   ) : (
                     <ProviderModelPicker
                       compact={isComposerFooterCompact}
@@ -3348,7 +3356,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   )}
 
-                  {isComposerFooterCompact ? (
+                  {LLP_CHAT_ONLY_UI ? null : isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}

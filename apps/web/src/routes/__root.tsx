@@ -4,6 +4,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   Outlet,
   createRootRoute,
+  redirect,
   type ErrorComponentProps,
   useLocation,
   useNavigate,
@@ -57,9 +58,13 @@ import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
+import { LLP_CHAT_ONLY_UI, isLlpChatOnlyRestrictedRoute } from "../deploymentProfile";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
+    if (LLP_CHAT_ONLY_UI && isLlpChatOnlyRestrictedRoute(location.pathname)) {
+      throw redirect({ to: "/", replace: true });
+    }
     if (location.pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href))) {
       return {
         authGateState: {
@@ -120,13 +125,12 @@ function RootRouteView() {
     );
   }
 
-  const appShell = (
-    <CommandPalette>
-      <AppSidebarLayout>
-        <Outlet />
-      </AppSidebarLayout>
-    </CommandPalette>
+  const appContent = (
+    <AppSidebarLayout>
+      <Outlet />
+    </AppSidebarLayout>
   );
+  const appShell = LLP_CHAT_ONLY_UI ? appContent : <CommandPalette>{appContent}</CommandPalette>;
 
   return (
     <ToastProvider>
@@ -136,19 +140,21 @@ function RootRouteView() {
         <GlassAppearanceSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-        <RelayClientInstallDialog />
-        <ConnectOnboardingDialog />
+        {LLP_CHAT_ONLY_UI ? null : <RelayClientInstallDialog />}
+        {LLP_CHAT_ONLY_UI ? null : <ConnectOnboardingDialog />}
         <SshPasswordPromptDialog />
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
-        {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}
-        {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+        {primaryEnvironmentAuthenticated && !LLP_CHAT_ONLY_UI ? <PlanAgentSelectionHeal /> : null}
+        {primaryEnvironmentAuthenticated && !LLP_CHAT_ONLY_UI ? (
+          <ProviderUpdateLaunchNotification />
+        ) : null}
         {appShell}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}
-        <ThemeEditorHost />
+        {LLP_CHAT_ONLY_UI ? null : <ThemeEditorHost />}
       </AnchoredToastProvider>
     </ToastProvider>
   );
