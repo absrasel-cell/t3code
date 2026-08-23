@@ -1,4 +1,5 @@
 export type RtxTaskStatus = "done" | "ongoing" | "pending" | "error";
+export type CurrentTaskProvider = "Codex" | "Claude";
 
 export interface RtxTaskThreadShape {
   readonly title: string;
@@ -20,7 +21,8 @@ export interface RtxTaskThreadShape {
 
 export interface RtxTaskPresentation {
   readonly title: string;
-  readonly origin: string;
+  readonly origin: string | null;
+  readonly provider: CurrentTaskProvider;
   readonly status: RtxTaskStatus;
   readonly statusLabel: string;
   readonly archived: boolean;
@@ -36,9 +38,19 @@ export function parseRtxTaskTitle(title: string): { origin: string; title: strin
   return { origin: match[1]!, title: match[2]!.trim() };
 }
 
-export function presentRtxTask(thread: RtxTaskThreadShape): RtxTaskPresentation | null {
+export function currentTaskProviderForDriver(
+  driverKind: string | null | undefined,
+): CurrentTaskProvider | null {
+  if (driverKind === "codex") return "Codex";
+  if (driverKind === "claudeAgent") return "Claude";
+  return null;
+}
+
+export function presentCurrentTask(
+  thread: RtxTaskThreadShape,
+  provider: CurrentTaskProvider,
+): RtxTaskPresentation {
   const parsed = parseRtxTaskTitle(thread.title);
-  if (!parsed) return null;
 
   const waiting = thread.hasPendingApprovals || thread.hasPendingUserInput;
   const running =
@@ -77,7 +89,9 @@ export function presentRtxTask(thread: RtxTaskThreadShape): RtxTaskPresentation 
       : null;
 
   return {
-    ...parsed,
+    title: parsed?.title ?? thread.title.trim(),
+    origin: parsed?.origin ?? null,
+    provider,
     status,
     statusLabel,
     archived: thread.archivedAt !== null,
