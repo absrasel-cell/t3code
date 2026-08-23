@@ -6,10 +6,12 @@ import {
   Files,
   GitPullRequest,
   Globe2,
+  ListTodo,
   Plus,
   TerminalSquare,
   Volume2,
   VolumeOff,
+  Workflow,
   X,
 } from "lucide-react";
 import {
@@ -74,12 +76,16 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddCurrentTasks: () => void;
+  onAddRtxOrchestrator: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  currentTasksAvailable: boolean;
+  rtxOrchestratorAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -101,6 +107,8 @@ const SURFACE_DISABLED_REASONS = {
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
+  currentTasks: "Current Tasks are available on the RedClaw r3xCode server.",
+  rtxOrchestrator: "RTX orchestration is available on the RedClaw r3xCode server.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -123,6 +131,8 @@ const SURFACE_UNAVAILABLE_HINTS = {
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
   agents: "Available from a thread.",
+  currentTasks: "Available on the RedClaw r3xCode server.",
+  rtxOrchestrator: "Available on the RedClaw r3xCode server.",
 } as const;
 
 type TabContextMenuAction =
@@ -252,12 +262,16 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddCurrentTasks: () => void;
+  onAddRtxOrchestrator: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  currentTasksAvailable: boolean;
+  rtxOrchestratorAvailable: boolean;
   liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
@@ -323,6 +337,26 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
+    },
+    {
+      label: "Current Tasks",
+      description: "Track RTX jobs and r3xCode threads.",
+      icon: ListTodo,
+      shortcut: "C",
+      available: props.currentTasksAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.currentTasks,
+      onClick: props.onAddCurrentTasks,
+      badgeCount: 0,
+    },
+    {
+      label: "Orchestrator (RTX)",
+      description: "Assign work, automation, and schedules.",
+      icon: Workflow,
+      shortcut: "O",
+      available: props.rtxOrchestratorAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.rtxOrchestrator,
+      onClick: props.onAddRtxOrchestrator,
+      badgeCount: 0,
     },
   ] as const;
 
@@ -508,6 +542,10 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
+    case "current-tasks":
+      return "Current Tasks";
+    case "rtx-orchestrator":
+      return "Orchestrator (RTX)";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -593,6 +631,10 @@ function SurfaceIcon({
     }
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "current-tasks":
+      return <ListTodo className="size-3 shrink-0" />;
+    case "rtx-orchestrator":
+      return <Workflow className="size-3 shrink-0" />;
   }
 }
 
@@ -650,6 +692,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.agentsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.agents,
       onClick: props.onAddAgents,
+    },
+    {
+      label: "Current Tasks",
+      icon: ListTodo,
+      shortcut: "C",
+      available: props.currentTasksAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.currentTasks,
+      onClick: props.onAddCurrentTasks,
+    },
+    {
+      label: "Orchestrator (RTX)",
+      icon: Workflow,
+      shortcut: "O",
+      available: props.rtxOrchestratorAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.rtxOrchestrator,
+      onClick: props.onAddRtxOrchestrator,
     },
   ] as const;
 
@@ -943,12 +1001,16 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
+            onAddCurrentTasks={props.onAddCurrentTasks}
+            onAddRtxOrchestrator={props.onAddRtxOrchestrator}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
+            currentTasksAvailable={props.currentTasksAvailable}
+            rtxOrchestratorAvailable={props.rtxOrchestratorAvailable}
             liveAgentCount={props.liveAgentCount}
           />
         ) : (
