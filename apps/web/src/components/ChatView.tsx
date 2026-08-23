@@ -160,6 +160,8 @@ import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavaila
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import { RtxCurrentTasksPanel } from "./rtx/RtxCurrentTasksPanel";
+import { readRtxOrchestratorState } from "./rtx/rtxApi";
+import { resolveRslThreadTaskFilter, type RslThreadTaskFilter } from "./rtx/rtxTaskModel";
 import { RtxOrchestratorPanel } from "./rtx/RtxOrchestratorPanel";
 import {
   deriveAgentPanelModel,
@@ -1639,6 +1641,45 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadEnvironmentId, activeThreadId],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const [currentTasksAutoSelection, setCurrentTasksAutoSelection] = useState<{
+    readonly threadKey: string;
+    readonly filter: RslThreadTaskFilter;
+  } | null>(null);
+  useEffect(() => {
+    if (!activeThreadRef || !activeThreadKey) return;
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let attempts = 0;
+    const threadRef = activeThreadRef;
+    const threadKey = activeThreadKey;
+    const openCurrentTasksForThread = async () => {
+      attempts += 1;
+      try {
+        const rtxState = await readRtxOrchestratorState();
+        if (cancelled) return;
+        const filter = resolveRslThreadTaskFilter(
+          rtxState.rslTasks,
+          threadRef.environmentId,
+          threadRef.threadId,
+        );
+        if (filter) {
+          setCurrentTasksAutoSelection({ threadKey, filter });
+          useRightPanelStore.getState().open(threadRef, "current-tasks");
+          return;
+        }
+      } catch {
+        // Retry within the same bounded window used for a new attachment to appear.
+      }
+      if (!cancelled && attempts < 12) {
+        retryTimer = window.setTimeout(() => void openCurrentTasksForThread(), 5_000);
+      }
+    };
+    void openCurrentTasksForThread();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
+  }, [activeThreadKey, activeThreadRef]);
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -6264,6 +6305,10 @@ function ChatViewContent(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
+  const currentTasksInitialFilter =
+    currentTasksAutoSelection?.threadKey === activeThreadKey
+      ? currentTasksAutoSelection.filter
+      : "ongoing";
   const panelToggleControls = (
     <PanelLayoutControls
       terminalAvailable={activeProject !== null}
@@ -6388,7 +6433,10 @@ function ChatViewContent(props: ChatViewProps) {
         threadId={activeThreadRef?.threadId ?? null}
       />
     ) : activeRightPanelSurface?.kind === "current-tasks" ? (
-      <RtxCurrentTasksPanel />
+      <RtxCurrentTasksPanel
+        key={`${activeThreadKey}:${currentTasksInitialFilter}`}
+        initialFilter={currentTasksInitialFilter}
+      />
     ) : activeRightPanelSurface?.kind === "rtx-orchestrator" ? (
       <RtxOrchestratorPanel />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
