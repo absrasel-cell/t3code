@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isRslDelegatedTask, selectRslDelegatedTasks } from "./rtxTaskModel";
+import {
+  isRslDelegatedTask,
+  selectAttachedRslDelegatedTasks,
+  selectRslDelegatedTasks,
+} from "./rtxTaskModel";
 
 const delegatedTask = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -51,5 +55,14 @@ describe("RSL delegated task selection", () => {
         checklist: [{ id: "task-1", title: "Inspect files", status: "inProgress" }],
       }),
     ).toBe(false);
+  });
+
+  it("excludes historical delegations without a live r3xCode thread attachment", () => {
+    expect(
+      selectAttachedRslDelegatedTasks([
+        delegatedTask,
+        { ...delegatedTask, id: "55555555-5555-4555-8555-555555555555", threadId: "" },
+      ]),
+    ).toEqual([delegatedTask]);
   });
 });

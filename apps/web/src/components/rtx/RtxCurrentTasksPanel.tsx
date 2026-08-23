@@ -18,7 +18,7 @@ import { buildThreadRouteParams } from "~/threadRoutes";
 
 import { readRtxOrchestratorState, type RtxOrchestratorState } from "./rtxApi";
 import {
-  selectRslDelegatedTasks,
+  selectAttachedRslDelegatedTasks,
   type RslChecklistItem,
   type RslDelegatedTask,
   type RtxTaskStatus,
@@ -161,7 +161,10 @@ export function RtxCurrentTasksPanel() {
     return () => window.clearInterval(interval);
   }, [refresh]);
 
-  const tasks = useMemo(() => selectRslDelegatedTasks(state?.rslTasks ?? []), [state?.rslTasks]);
+  const tasks = useMemo(
+    () => selectAttachedRslDelegatedTasks(state?.rslTasks ?? []),
+    [state?.rslTasks],
+  );
   const projectNames = useMemo(
     () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
     [state?.projects],
@@ -240,13 +243,8 @@ export function RtxCurrentTasksPanel() {
                   </div>
                   <DelegationChecklist items={task.checklist} />
                   <div className="mt-2.5 flex justify-end border-t border-border/60 pt-2">
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      disabled={!task.environmentId || !task.threadId}
-                      onClick={() => openThread(task)}
-                    >
-                      {task.threadId ? "Open r3xCode thread" : "Thread link pending"}
+                    <Button size="xs" variant="ghost" onClick={() => openThread(task)}>
+                      Open r3xCode thread
                     </Button>
                   </div>
                 </article>

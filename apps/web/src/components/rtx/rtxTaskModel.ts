@@ -61,3 +61,11 @@ export function isRslDelegatedTask(value: unknown): value is RslDelegatedTask {
 export function selectRslDelegatedTasks(values: ReadonlyArray<unknown>): RslDelegatedTask[] {
   return values.filter(isRslDelegatedTask);
 }
+
+export function selectAttachedRslDelegatedTasks(
+  values: ReadonlyArray<unknown>,
+): RslDelegatedTask[] {
+  return selectRslDelegatedTasks(values).filter(
+    (task) => task.environmentId.length > 0 && task.threadId.length > 0,
+  );
+}
