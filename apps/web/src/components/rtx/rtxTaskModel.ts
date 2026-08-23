@@ -1,5 +1,4 @@
 export type RtxTaskStatus = "done" | "ongoing" | "pending" | "error";
-export type RslThreadTaskFilter = Extract<RtxTaskStatus, "done" | "ongoing">;
 export type RslChecklistItemStatus = "done" | "ongoing" | "pending";
 
 export interface RslChecklistItem {
@@ -71,27 +70,6 @@ export function selectAttachedRslDelegatedTasks(
   );
 }
 
-export function selectRslDelegatedTaskForThread(
-  values: ReadonlyArray<unknown>,
-  environmentId: string,
-  threadId: string,
-): RslDelegatedTask | null {
-  return (
-    selectAttachedRslDelegatedTasks(values).find(
-      (task) => task.environmentId === environmentId && task.threadId === threadId,
-    ) ?? null
-  );
-}
-
 export function rslThreadTaskRetryDelay(attempt: number): number {
   return attempt <= 8 ? 250 : 1_000;
-}
-
-export function resolveRslThreadTaskFilter(
-  values: ReadonlyArray<unknown>,
-  environmentId: string,
-  threadId: string,
-): RslThreadTaskFilter | null {
-  const task = selectRslDelegatedTaskForThread(values, environmentId, threadId);
-  return task?.status === "done" || task?.status === "ongoing" ? task.status : null;
 }
