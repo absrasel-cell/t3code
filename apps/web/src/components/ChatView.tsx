@@ -160,8 +160,8 @@ import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavaila
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import { RtxCurrentTasksPanel } from "./rtx/RtxCurrentTasksPanel";
-import { readRtxOrchestratorState } from "./rtx/rtxApi";
-import { resolveRslThreadTaskFilter, type RslThreadTaskFilter } from "./rtx/rtxTaskModel";
+import { readRtxThreadTask } from "./rtx/rtxApi";
+import { rslThreadTaskRetryDelay, type RslThreadTaskFilter } from "./rtx/rtxTaskModel";
 import { RtxOrchestratorPanel } from "./rtx/RtxOrchestratorPanel";
 import {
   deriveAgentPanelModel,
@@ -1655,23 +1655,23 @@ function ChatViewContent(props: ChatViewProps) {
     const openCurrentTasksForThread = async () => {
       attempts += 1;
       try {
-        const rtxState = await readRtxOrchestratorState();
+        const { task } = await readRtxThreadTask(threadRef.environmentId, threadRef.threadId);
         if (cancelled) return;
-        const filter = resolveRslThreadTaskFilter(
-          rtxState.rslTasks,
-          threadRef.environmentId,
-          threadRef.threadId,
-        );
+        const filter = task?.status === "done" || task?.status === "ongoing" ? task.status : null;
         if (filter) {
           setCurrentTasksAutoSelection({ threadKey, filter });
           useRightPanelStore.getState().open(threadRef, "current-tasks");
           return;
         }
+        if (task) return;
       } catch {
         // Retry within the same bounded window used for a new attachment to appear.
       }
       if (!cancelled && attempts < 12) {
-        retryTimer = window.setTimeout(() => void openCurrentTasksForThread(), 5_000);
+        retryTimer = window.setTimeout(
+          () => void openCurrentTasksForThread(),
+          rslThreadTaskRetryDelay(attempts),
+        );
       }
     };
     void openCurrentTasksForThread();

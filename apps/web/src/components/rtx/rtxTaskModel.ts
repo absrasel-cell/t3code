@@ -83,6 +83,10 @@ export function selectRslDelegatedTaskForThread(
   );
 }
 
+export function rslThreadTaskRetryDelay(attempt: number): number {
+  return attempt <= 8 ? 250 : 1_000;
+}
+
 export function resolveRslThreadTaskFilter(
   values: ReadonlyArray<unknown>,
   environmentId: string,

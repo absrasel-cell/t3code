@@ -37,6 +37,12 @@ export interface RtxOrchestratorState {
   };
 }
 
+export interface RtxThreadTaskState {
+  readonly task: RslDelegatedTask | null;
+  readonly projectName: string;
+  readonly checkedAt: string;
+}
+
 interface RtxErrorResponse {
   readonly error?: string;
 }
@@ -55,6 +61,47 @@ export async function readRtxOrchestratorState(): Promise<RtxOrchestratorState> 
     headers: { accept: "application/json" },
   });
   return decodeResponse<RtxOrchestratorState>(response);
+}
+
+const THREAD_TASK_CACHE_MS = 4_000;
+const threadTaskCache = new Map<
+  string,
+  { readonly value: RtxThreadTaskState; readonly expiresAt: number }
+>();
+const threadTaskRequests = new Map<string, Promise<RtxThreadTaskState>>();
+
+export function clearRtxThreadTaskCacheForTests() {
+  threadTaskCache.clear();
+  threadTaskRequests.clear();
+}
+
+export function readRtxThreadTask(
+  environmentId: string,
+  threadId: string,
+): Promise<RtxThreadTaskState> {
+  const key = `${environmentId}\u0000${threadId}`;
+  const cached = threadTaskCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value);
+  const pending = threadTaskRequests.get(key);
+  if (pending) return pending;
+
+  const query = new URLSearchParams({ environmentId, threadId });
+  const request = fetch(`/api/rtx/thread-task?${query.toString()}`, {
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+  })
+    .then((response) => decodeResponse<RtxThreadTaskState>(response))
+    .then((value) => {
+      if (value.task) {
+        threadTaskCache.set(key, { value, expiresAt: Date.now() + THREAD_TASK_CACHE_MS });
+      } else {
+        threadTaskCache.delete(key);
+      }
+      return value;
+    })
+    .finally(() => threadTaskRequests.delete(key));
+  threadTaskRequests.set(key, request);
+  return request;
 }
 
 export async function runRtxAction<T = RtxOrchestratorState>(
