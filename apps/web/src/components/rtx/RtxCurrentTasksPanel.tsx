@@ -8,7 +8,6 @@ import {
   CircleDot,
   ListTodo,
   LoaderCircle,
-  RotateCw,
   TriangleAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -145,24 +144,20 @@ export function RtxCurrentTasksPanel() {
   const [filter, setFilter] = useState<TaskFilter>("ongoing");
   const [state, setState] = useState<RtxOrchestratorState | null>(null);
   const [error, setError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
 
-  const refresh = useCallback(async (showSpinner = true) => {
-    if (showSpinner) setRefreshing(true);
+  const refresh = useCallback(async () => {
     try {
       const next = await readRtxOrchestratorState();
       setState(next);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not read RedClaw task state.");
-    } finally {
-      if (showSpinner) setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    void refresh(false);
-    const interval = window.setInterval(() => void refresh(false), 5_000);
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5_000);
     return () => window.clearInterval(interval);
   }, [refresh]);
 
@@ -170,14 +165,6 @@ export function RtxCurrentTasksPanel() {
   const projectNames = useMemo(
     () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
     [state?.projects],
-  );
-  const counts = useMemo(
-    () => ({
-      ongoing: tasks.filter((task) => task.status === "ongoing").length,
-      pending: tasks.filter((task) => task.status === "pending").length,
-      done: tasks.filter((task) => task.status === "done").length,
-    }),
-    [tasks],
   );
   const visibleTasks = tasks.filter((task) => filter === "all" || task.status === filter);
 
@@ -195,41 +182,6 @@ export function RtxCurrentTasksPanel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background" data-rtx-current-tasks>
-      <div className="border-b border-border/70 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-sm">Current Tasks</h2>
-            <p className="mt-0.5 text-muted-foreground text-xs">
-              Development tasks delegated by RSL Ai to RTX at RedClaw.
-            </p>
-          </div>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Refresh RSL tasks"
-            onClick={() => void refresh()}
-          >
-            <RotateCw className={cn(refreshing && "animate-spin")} />
-          </Button>
-        </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {[
-            ["Ongoing", counts.ongoing, "text-info"],
-            ["Pending", counts.pending, "text-warning"],
-            ["Done", counts.done, "text-success"],
-          ].map(([label, count, tone]) => (
-            <div
-              key={String(label)}
-              className="rounded-lg border border-border/70 bg-card px-2.5 py-2"
-            >
-              <div className={cn("font-semibold text-lg tabular-nums", tone)}>{count}</div>
-              <div className="text-[10px] text-muted-foreground">{label}</div>
-            </div>
-          ))}
-        </div>
-        {error ? <p className="mt-2 text-destructive text-xs">{error}</p> : null}
-      </div>
-
       <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-3 py-2">
         {FILTERS.map((item) => (
           <button
@@ -247,6 +199,9 @@ export function RtxCurrentTasksPanel() {
           </button>
         ))}
       </div>
+      {error ? (
+        <p className="border-b border-border/70 px-3 py-2 text-destructive text-xs">{error}</p>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {visibleTasks.length === 0 ? (
