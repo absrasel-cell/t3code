@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -15,11 +16,17 @@ import { useMemo, useState } from "react";
 
 import { useThreadActions } from "~/hooks/useThreadActions";
 import { cn } from "~/lib/utils";
+import { deriveProviderEntriesByEnvironment } from "~/providerInstances";
 import { useProjects, useThreadShells } from "~/state/entities";
+import { environmentServerConfigsAtom } from "~/state/server";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
 
-import { presentRtxTask, type RtxTaskStatus } from "./rtxTaskModel";
+import {
+  currentTaskProviderForDriver,
+  presentCurrentTask,
+  type RtxTaskStatus,
+} from "./rtxTaskModel";
 
 type TaskFilter = "all" | RtxTaskStatus | "archived";
 
@@ -65,7 +72,8 @@ export function RtxCurrentTasksPanel() {
   const threads = useThreadShells();
   const projects = useProjects();
   const { archiveThread, unarchiveThread, deleteThread } = useThreadActions();
-  const [filter, setFilter] = useState<TaskFilter>("all");
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const [filter, setFilter] = useState<TaskFilter>("ongoing");
   const [busyThreadKey, setBusyThreadKey] = useState<string | null>(null);
 
   const projectNames = useMemo(
@@ -73,15 +81,29 @@ export function RtxCurrentTasksPanel() {
       new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project.title])),
     [projects],
   );
+  const providerEntriesByEnvironment = useMemo(
+    () =>
+      deriveProviderEntriesByEnvironment(
+        [...serverConfigs].map(
+          ([environmentId, config]) => [environmentId, config.providers] as const,
+        ),
+      ),
+    [serverConfigs],
+  );
   const tasks = useMemo(
     () =>
       threads
         .flatMap((thread) => {
-          const presentation = presentRtxTask(thread);
-          return presentation ? [{ thread, presentation }] : [];
+          const providerEntry = providerEntriesByEnvironment
+            .get(thread.environmentId)
+            ?.get(thread.modelSelection.instanceId);
+          const provider = currentTaskProviderForDriver(
+            providerEntry?.driverKind ?? thread.modelSelection.instanceId,
+          );
+          return provider ? [{ thread, presentation: presentCurrentTask(thread, provider) }] : [];
         })
         .sort((left, right) => right.thread.updatedAt.localeCompare(left.thread.updatedAt)),
-    [threads],
+    [providerEntriesByEnvironment, threads],
   );
   const counts = useMemo(
     () => ({
@@ -126,11 +148,11 @@ export function RtxCurrentTasksPanel() {
           <div>
             <h2 className="font-semibold text-sm">Current Tasks</h2>
             <p className="mt-0.5 text-muted-foreground text-xs">
-              r3xCode threads created through RedClaw and RTX.
+              Active Codex and Claude work across all r3xCode threads.
             </p>
           </div>
           <span className="rounded-full bg-muted px-2 py-1 font-medium text-[10px] text-muted-foreground">
-            {tasks.length} total
+            {counts.ongoing} active
           </span>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -176,7 +198,7 @@ export function RtxCurrentTasksPanel() {
               No {filter === "all" ? "current" : filter} tasks
             </p>
             <p className="mt-1 max-w-64 text-muted-foreground text-xs">
-              RTX-created threads appear here as soon as RedClaw sends them to r3xCode.
+              Running Codex and Claude threads appear here automatically.
             </p>
           </div>
         ) : (
@@ -201,7 +223,14 @@ export function RtxCurrentTasksPanel() {
                         {presentation.title}
                       </span>
                       <span className="mt-1 block truncate text-[11px] text-muted-foreground">
-                        {projectName} · {presentation.origin} · {formatUpdatedAt(thread.updatedAt)}
+                        {[
+                          projectName,
+                          presentation.provider,
+                          presentation.origin,
+                          formatUpdatedAt(thread.updatedAt),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </span>
                     <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
