@@ -59,6 +59,13 @@ export function assetResponseHeaders(filePath: string): Record<string, string> {
   };
 }
 
+export function staticResponseHeaders(filePath: string): Record<string, string> {
+  const lowerPath = filePath.toLowerCase();
+  return lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+    ? { "Cache-Control": "no-store" }
+    : {};
+}
+
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
 });
@@ -306,6 +313,7 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       return HttpServerResponse.uint8Array(indexData, {
         status: 200,
         contentType: "text/html; charset=utf-8",
+        headers: staticResponseHeaders(indexPath),
       });
     }
 
@@ -318,6 +326,7 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     return HttpServerResponse.uint8Array(data, {
       status: 200,
       contentType,
+      headers: staticResponseHeaders(filePath),
     });
   }),
 );

@@ -1471,6 +1471,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const response = yield* HttpClient.get("/");
       assert.equal(response.status, 200);
       assert.include(yield* response.text, "router-static-ok");
+      assert.equal(response.headers["cache-control"], "no-store");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
