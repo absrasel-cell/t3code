@@ -21,6 +21,7 @@ import {
   selectAttachedRslDelegatedTasks,
   type RslChecklistItem,
   type RslDelegatedTask,
+  type RslThreadTaskFilter,
   type RtxTaskStatus,
 } from "./rtxTaskModel";
 
@@ -139,9 +140,13 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
   );
 }
 
-export function RtxCurrentTasksPanel() {
+export function RtxCurrentTasksPanel({
+  initialFilter = "ongoing",
+}: {
+  readonly initialFilter?: RslThreadTaskFilter;
+}) {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<TaskFilter>("ongoing");
+  const [filter, setFilter] = useState<TaskFilter>(initialFilter);
   const [state, setState] = useState<RtxOrchestratorState | null>(null);
   const [error, setError] = useState("");
 

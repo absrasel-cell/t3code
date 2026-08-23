@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   isRslDelegatedTask,
+  resolveRslThreadTaskFilter,
   selectAttachedRslDelegatedTasks,
   selectRslDelegatedTasks,
 } from "./rtxTaskModel";
@@ -64,5 +65,29 @@ describe("RSL delegated task selection", () => {
         { ...delegatedTask, id: "55555555-5555-4555-8555-555555555555", threadId: "" },
       ]),
     ).toEqual([delegatedTask]);
+  });
+
+  it("selects Ongoing for active threads and Done for saved completed threads", () => {
+    const completedTask = {
+      ...delegatedTask,
+      id: "66666666-6666-4666-8666-666666666666",
+      threadId: "77777777-7777-4777-8777-777777777777",
+      status: "done",
+    } as const;
+    expect(
+      resolveRslThreadTaskFilter(
+        [delegatedTask, completedTask],
+        delegatedTask.environmentId,
+        delegatedTask.threadId,
+      ),
+    ).toBe("ongoing");
+    expect(
+      resolveRslThreadTaskFilter(
+        [delegatedTask, completedTask],
+        completedTask.environmentId,
+        completedTask.threadId,
+      ),
+    ).toBe("done");
+    expect(resolveRslThreadTaskFilter([delegatedTask], "local", "unrelated-thread")).toBeNull();
   });
 });
