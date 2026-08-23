@@ -5,6 +5,7 @@ import {
   resolveRslThreadTaskFilter,
   selectAttachedRslDelegatedTasks,
   selectRslDelegatedTasks,
+  selectRslDelegatedTaskForThread,
 } from "./rtxTaskModel";
 
 const delegatedTask = {
@@ -89,5 +90,30 @@ describe("RSL delegated task selection", () => {
       ),
     ).toBe("done");
     expect(resolveRslThreadTaskFilter([delegatedTask], "local", "unrelated-thread")).toBeNull();
+  });
+
+  it("returns only the delegation linked to the open thread", () => {
+    const otherCompletedTask = {
+      ...delegatedTask,
+      id: "88888888-8888-4888-8888-888888888888",
+      threadId: "99999999-9999-4999-8999-999999999999",
+      title: "Unrelated completed work",
+      status: "done",
+    } as const;
+
+    expect(
+      selectRslDelegatedTaskForThread(
+        [delegatedTask, otherCompletedTask],
+        delegatedTask.environmentId,
+        delegatedTask.threadId,
+      ),
+    ).toEqual(delegatedTask);
+    expect(
+      selectRslDelegatedTaskForThread(
+        [delegatedTask, otherCompletedTask],
+        otherCompletedTask.environmentId,
+        "unrelated-thread",
+      ),
+    ).toBeNull();
   });
 });

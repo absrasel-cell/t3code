@@ -1,26 +1,13 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import {
-  Check,
-  CheckCircle2,
-  Circle,
-  CircleDot,
-  ListTodo,
-  LoaderCircle,
-  TriangleAlert,
-} from "lucide-react";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import { CheckCircle2, Circle, CircleDot, ListTodo } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import { buildThreadRouteParams } from "~/threadRoutes";
 
 import { readRtxOrchestratorState, type RtxOrchestratorState } from "./rtxApi";
 import {
-  selectAttachedRslDelegatedTasks,
+  selectRslDelegatedTaskForThread,
   type RslChecklistItem,
-  type RslDelegatedTask,
   type RslThreadTaskFilter,
   type RtxTaskStatus,
 } from "./rtxTaskModel";
@@ -34,23 +21,6 @@ const FILTERS: ReadonlyArray<{ id: TaskFilter; label: string }> = [
   { id: "error", label: "Error" },
   { id: "all", label: "All" },
 ];
-
-function TaskStatusIcon({ status }: { status: RtxTaskStatus }) {
-  if (status === "done") {
-    return (
-      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground">
-        <Check className="size-3.5" strokeWidth={2.5} />
-      </span>
-    );
-  }
-  if (status === "ongoing") {
-    return <LoaderCircle className="size-5 shrink-0 animate-spin text-info" />;
-  }
-  if (status === "error") {
-    return <TriangleAlert className="size-5 shrink-0 text-destructive" />;
-  }
-  return <Circle className="size-5 shrink-0 text-muted-foreground/60" />;
-}
 
 function formatUpdatedAt(value: string): string {
   const date = new Date(value);
@@ -68,23 +38,22 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
   const nextPendingId = items.find((item) => item.status === "pending")?.id ?? null;
 
   return (
-    <section
-      className="mt-3 rounded-lg border border-border/60 bg-background/45 px-2.5 py-2"
-      data-rsl-delegation-checklist="true"
-    >
-      <div className="flex items-center gap-1.5 text-[11px]">
-        <ListTodo aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">Tasks</span>
-        <span className="text-muted-foreground tabular-nums">
-          {completed}/{items.length}
+    <section className="mt-4" data-rsl-delegation-checklist="true">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-border/60 border-y py-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+        <span className="flex items-center gap-1.5">
+          <ListTodo aria-hidden className="size-3.5" />
+          Task
+        </span>
+        <span className="tabular-nums">
+          Status · {completed}/{items.length}
         </span>
       </div>
       {items.length === 0 ? (
-        <p className="mt-2 text-[11px] text-muted-foreground/70">
+        <p className="py-3 text-[11px] text-muted-foreground/70">
           No RSL/RTX checklist was recorded for this older delegation.
         </p>
       ) : (
-        <div className="mt-1.5 space-y-0.5" role="list">
+        <div className="divide-y divide-border/45" role="list">
           {items.map((item) => {
             const label =
               item.status === "done"
@@ -97,31 +66,36 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
             return (
               <div
                 key={item.id}
-                className="flex items-start gap-2 py-0.5 text-[11px] leading-4"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 py-2.5 text-[11px] leading-4"
                 role="listitem"
               >
-                {item.status === "done" ? (
-                  <CheckCircle2 aria-hidden className="mt-0.5 size-3 shrink-0 text-success" />
-                ) : item.status === "ongoing" ? (
-                  <CircleDot aria-hidden className="mt-0.5 size-3 shrink-0 text-info" />
-                ) : (
-                  <Circle aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground/35" />
-                )}
-                <span
-                  className={cn(
-                    "min-w-0 flex-1",
-                    item.status === "done"
-                      ? "text-muted-foreground/55"
-                      : item.status === "ongoing"
-                        ? "text-foreground"
-                        : "text-muted-foreground/70",
+                <span className="flex min-w-0 items-start gap-2.5">
+                  {item.status === "done" ? (
+                    <CheckCircle2 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-success" />
+                  ) : item.status === "ongoing" ? (
+                    <CircleDot aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
+                  ) : (
+                    <Circle
+                      aria-hidden
+                      className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/35"
+                    />
                   )}
-                >
-                  {item.title}
+                  <span
+                    className={cn(
+                      "min-w-0",
+                      item.status === "done"
+                        ? "text-muted-foreground/60"
+                        : item.status === "ongoing"
+                          ? "text-foreground"
+                          : "text-muted-foreground/75",
+                    )}
+                  >
+                    {item.title}
+                  </span>
                 </span>
                 <span
                   className={cn(
-                    "shrink-0 text-[10px]",
+                    "shrink-0 pt-px text-[10px] tabular-nums",
                     item.status === "ongoing"
                       ? "text-info"
                       : item.status === "done"
@@ -141,11 +115,12 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
 }
 
 export function RtxCurrentTasksPanel({
+  threadRef,
   initialFilter = "ongoing",
 }: {
+  readonly threadRef: ScopedThreadRef;
   readonly initialFilter?: RslThreadTaskFilter;
 }) {
-  const navigate = useNavigate();
   const [filter, setFilter] = useState<TaskFilter>(initialFilter);
   const [state, setState] = useState<RtxOrchestratorState | null>(null);
   const [error, setError] = useState("");
@@ -166,27 +141,21 @@ export function RtxCurrentTasksPanel({
     return () => window.clearInterval(interval);
   }, [refresh]);
 
-  const tasks = useMemo(
-    () => selectAttachedRslDelegatedTasks(state?.rslTasks ?? []),
-    [state?.rslTasks],
+  const linkedTask = useMemo(
+    () =>
+      selectRslDelegatedTaskForThread(
+        state?.rslTasks ?? [],
+        threadRef.environmentId,
+        threadRef.threadId,
+      ),
+    [state?.rslTasks, threadRef.environmentId, threadRef.threadId],
   );
   const projectNames = useMemo(
     () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
     [state?.projects],
   );
-  const visibleTasks = tasks.filter((task) => filter === "all" || task.status === filter);
-
-  const openThread = (task: RslDelegatedTask) => {
-    if (!task.environmentId || !task.threadId) return;
-    const threadRef = scopeThreadRef(
-      EnvironmentId.make(task.environmentId),
-      ThreadId.make(task.threadId),
-    );
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-    });
-  };
+  const visibleTasks =
+    linkedTask && (filter === "all" || linkedTask.status === filter) ? [linkedTask] : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background" data-rtx-current-tasks>
@@ -223,35 +192,24 @@ export function RtxCurrentTasksPanel({
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div>
             {visibleTasks.map((task) => {
               return (
-                <article key={task.id} className="rounded-xl border border-border/70 bg-card p-3">
-                  <div className="flex w-full items-start gap-2.5 text-left">
-                    <TaskStatusIcon status={task.status} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-sm leading-snug">{task.title}</span>
-                      <span className="mt-1 block truncate text-[11px] text-muted-foreground">
-                        {[
-                          projectNames.get(task.projectId) ?? task.projectId,
-                          task.source,
-                          task.origin,
-                          formatUpdatedAt(task.updatedAt),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </span>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {task.statusLabel}
+                <article key={task.id}>
+                  <div className="min-w-0">
+                    <span className="block font-medium text-sm leading-snug">{task.title}</span>
+                    <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
+                      {[
+                        projectNames.get(task.projectId) ?? task.projectId,
+                        task.source,
+                        task.origin,
+                        formatUpdatedAt(task.updatedAt),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </span>
                   </div>
                   <DelegationChecklist items={task.checklist} />
-                  <div className="mt-2.5 flex justify-end border-t border-border/60 pt-2">
-                    <Button size="xs" variant="ghost" onClick={() => openThread(task)}>
-                      Open r3xCode thread
-                    </Button>
-                  </div>
                 </article>
               );
             })}

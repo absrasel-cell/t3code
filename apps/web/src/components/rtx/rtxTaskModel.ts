@@ -71,13 +71,23 @@ export function selectAttachedRslDelegatedTasks(
   );
 }
 
+export function selectRslDelegatedTaskForThread(
+  values: ReadonlyArray<unknown>,
+  environmentId: string,
+  threadId: string,
+): RslDelegatedTask | null {
+  return (
+    selectAttachedRslDelegatedTasks(values).find(
+      (task) => task.environmentId === environmentId && task.threadId === threadId,
+    ) ?? null
+  );
+}
+
 export function resolveRslThreadTaskFilter(
   values: ReadonlyArray<unknown>,
   environmentId: string,
   threadId: string,
 ): RslThreadTaskFilter | null {
-  const task = selectAttachedRslDelegatedTasks(values).find(
-    (candidate) => candidate.environmentId === environmentId && candidate.threadId === threadId,
-  );
+  const task = selectRslDelegatedTaskForThread(values, environmentId, threadId);
   return task?.status === "done" || task?.status === "ongoing" ? task.status : null;
 }
