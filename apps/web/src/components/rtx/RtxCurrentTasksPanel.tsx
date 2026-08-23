@@ -1,16 +1,29 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, Circle, LoaderCircle, RotateCw, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  ListTodo,
+  LoaderCircle,
+  RotateCw,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import { useThreadShells } from "~/state/entities";
 import { buildThreadRouteParams } from "~/threadRoutes";
 
 import { readRtxOrchestratorState, type RtxOrchestratorState } from "./rtxApi";
-import { selectRslDelegatedTasks, type RslDelegatedTask, type RtxTaskStatus } from "./rtxTaskModel";
+import {
+  selectRslDelegatedTasks,
+  type RslChecklistItem,
+  type RslDelegatedTask,
+  type RtxTaskStatus,
+} from "./rtxTaskModel";
 
 type TaskFilter = "all" | RtxTaskStatus;
 
@@ -50,9 +63,85 @@ function formatUpdatedAt(value: string): string {
   }).format(date);
 }
 
+function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslChecklistItem> }) {
+  const completed = items.filter((item) => item.status === "done").length;
+  const nextPendingId = items.find((item) => item.status === "pending")?.id ?? null;
+
+  return (
+    <section
+      className="mt-3 rounded-lg border border-border/60 bg-background/45 px-2.5 py-2"
+      data-rsl-delegation-checklist="true"
+    >
+      <div className="flex items-center gap-1.5 text-[11px]">
+        <ListTodo aria-hidden className="size-3.5 text-muted-foreground" />
+        <span className="font-medium">Tasks</span>
+        <span className="text-muted-foreground tabular-nums">
+          {completed}/{items.length}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="mt-2 text-[11px] text-muted-foreground/70">
+          No RSL/RTX checklist was recorded for this older delegation.
+        </p>
+      ) : (
+        <div className="mt-1.5 space-y-0.5" role="list">
+          {items.map((item) => {
+            const label =
+              item.status === "done"
+                ? "done"
+                : item.status === "ongoing"
+                  ? "now"
+                  : item.id === nextPendingId
+                    ? "up next"
+                    : "pending";
+            return (
+              <div
+                key={item.id}
+                className="flex items-start gap-2 py-0.5 text-[11px] leading-4"
+                role="listitem"
+              >
+                {item.status === "done" ? (
+                  <CheckCircle2 aria-hidden className="mt-0.5 size-3 shrink-0 text-success" />
+                ) : item.status === "ongoing" ? (
+                  <CircleDot aria-hidden className="mt-0.5 size-3 shrink-0 text-info" />
+                ) : (
+                  <Circle aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground/35" />
+                )}
+                <span
+                  className={cn(
+                    "min-w-0 flex-1",
+                    item.status === "done"
+                      ? "text-muted-foreground/55"
+                      : item.status === "ongoing"
+                        ? "text-foreground"
+                        : "text-muted-foreground/70",
+                  )}
+                >
+                  {item.title}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-[10px]",
+                    item.status === "ongoing"
+                      ? "text-info"
+                      : item.status === "done"
+                        ? "text-success/70"
+                        : "text-muted-foreground/45",
+                  )}
+                >
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function RtxCurrentTasksPanel() {
   const navigate = useNavigate();
-  const threads = useThreadShells();
   const [filter, setFilter] = useState<TaskFilter>("ongoing");
   const [state, setState] = useState<RtxOrchestratorState | null>(null);
   const [error, setError] = useState("");
@@ -82,13 +171,6 @@ export function RtxCurrentTasksPanel() {
     () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
     [state?.projects],
   );
-  const threadById = useMemo(() => {
-    const byId = new Map<string, (typeof threads)[number]>();
-    for (const thread of threads) {
-      byId.set(`${thread.environmentId}:${thread.id}`, thread);
-    }
-    return byId;
-  }, [threads]);
   const counts = useMemo(
     () => ({
       ongoing: tasks.filter((task) => task.status === "ongoing").length,
@@ -180,12 +262,6 @@ export function RtxCurrentTasksPanel() {
         ) : (
           <div className="space-y-2">
             {visibleTasks.map((task) => {
-              const thread = threadById.get(`${task.environmentId}:${task.threadId}`);
-              const progress = thread?.planProgress;
-              const progressPercent =
-                progress && progress.totalSteps > 0
-                  ? Math.min(100, Math.round((progress.completedSteps / progress.totalSteps) * 100))
-                  : null;
               return (
                 <article key={task.id} className="rounded-xl border border-border/70 bg-card p-3">
                   <div className="flex w-full items-start gap-2.5 text-left">
@@ -207,21 +283,7 @@ export function RtxCurrentTasksPanel() {
                       {task.statusLabel}
                     </span>
                   </div>
-                  {progress ? (
-                    <div className="mt-2.5 pl-7.5">
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {progress.step}
-                      </div>
-                      {progressPercent !== null ? (
-                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-info"
-                            style={{ width: `${progressPercent}%` }}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  <DelegationChecklist items={task.checklist} />
                   <div className="mt-2.5 flex justify-end border-t border-border/60 pt-2">
                     <Button
                       size="xs"

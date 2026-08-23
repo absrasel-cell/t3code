@@ -15,6 +15,11 @@ const delegatedTask = {
   createdAt: "2026-08-23T10:00:00Z",
   threadId: "33333333-3333-4333-8333-333333333333",
   environmentId: "local",
+  checklist: [
+    { id: "task-1", title: "Inspect repository instructions", status: "done" },
+    { id: "task-2", title: "Reproduce the build failure", status: "ongoing" },
+    { id: "task-3", title: "Run the authoritative checks", status: "pending" },
+  ],
 } as const;
 
 describe("RSL delegated task selection", () => {
@@ -37,5 +42,14 @@ describe("RSL delegated task selection", () => {
 
   it("rejects a forged label without a real delegation UUID", () => {
     expect(isRslDelegatedTask({ ...delegatedTask, id: "not-a-delegation" })).toBe(false);
+  });
+
+  it("rejects provider-authored plan rows in place of the delegation checklist", () => {
+    expect(
+      isRslDelegatedTask({
+        ...delegatedTask,
+        checklist: [{ id: "task-1", title: "Inspect files", status: "inProgress" }],
+      }),
+    ).toBe(false);
   });
 });
