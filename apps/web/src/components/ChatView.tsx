@@ -6565,6 +6565,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "current-tasks" ? (
       <RtxCurrentTasksPanel
         key={`${activeThreadKey}:${currentTasksInitialFilter}`}
+        threadRef={activeThreadRef}
         initialFilter={currentTasksInitialFilter}
       />
     ) : activeRightPanelSurface?.kind === "rtx-orchestrator" ? (
