@@ -109,6 +109,8 @@ function renderTabs(
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
+      onAddCurrentTasks={() => undefined}
+      onAddRtxOrchestrator={() => undefined}
       liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
@@ -116,6 +118,8 @@ function renderTabs(
       filesAvailable={false}
       pullRequestAvailable={false}
       agentsAvailable={false}
+      currentTasksAvailable
+      rtxOrchestratorAvailable
     >
       <div>content</div>
     </RightPanelTabs>,
