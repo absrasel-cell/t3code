@@ -1,3 +1,5 @@
+import type { RslDelegatedTask } from "./rtxTaskModel";
+
 export type RtxAutomaticMode = "auto" | "on" | "off";
 
 export interface RtxProjectOption {
@@ -26,6 +28,7 @@ export interface RtxOrchestratorState {
   readonly settings: { readonly automaticMode: RtxAutomaticMode };
   readonly projects: ReadonlyArray<RtxProjectOption>;
   readonly schedules: ReadonlyArray<RtxSchedule>;
+  readonly rslTasks: ReadonlyArray<RslDelegatedTask>;
   readonly health: {
     readonly redclaw: "online" | "degraded";
     readonly rtx: "ready" | "unavailable";

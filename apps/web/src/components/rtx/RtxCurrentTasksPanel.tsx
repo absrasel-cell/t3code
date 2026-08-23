@@ -1,42 +1,25 @@
-import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  Archive,
-  ArchiveRestore,
-  Check,
-  Circle,
-  LoaderCircle,
-  RotateCw,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { Check, Circle, LoaderCircle, RotateCw, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { useThreadActions } from "~/hooks/useThreadActions";
-import { cn } from "~/lib/utils";
-import { deriveProviderEntriesByEnvironment } from "~/providerInstances";
-import { useProjects, useThreadShells } from "~/state/entities";
-import { environmentServerConfigsAtom } from "~/state/server";
-import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
+import { useThreadShells } from "~/state/entities";
+import { buildThreadRouteParams } from "~/threadRoutes";
 
-import {
-  currentTaskProviderForDriver,
-  presentCurrentTask,
-  type RtxTaskStatus,
-} from "./rtxTaskModel";
+import { readRtxOrchestratorState, type RtxOrchestratorState } from "./rtxApi";
+import { selectRslDelegatedTasks, type RslDelegatedTask, type RtxTaskStatus } from "./rtxTaskModel";
 
-type TaskFilter = "all" | RtxTaskStatus | "archived";
+type TaskFilter = "all" | RtxTaskStatus;
 
 const FILTERS: ReadonlyArray<{ id: TaskFilter; label: string }> = [
-  { id: "all", label: "All" },
   { id: "ongoing", label: "Ongoing" },
   { id: "pending", label: "Pending" },
   { id: "done", label: "Done" },
   { id: "error", label: "Error" },
-  { id: "archived", label: "Archived" },
+  { id: "all", label: "All" },
 ];
 
 function TaskStatusIcon({ status }: { status: RtxTaskStatus }) {
@@ -70,75 +53,62 @@ function formatUpdatedAt(value: string): string {
 export function RtxCurrentTasksPanel() {
   const navigate = useNavigate();
   const threads = useThreadShells();
-  const projects = useProjects();
-  const { archiveThread, unarchiveThread, deleteThread } = useThreadActions();
-  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const [filter, setFilter] = useState<TaskFilter>("ongoing");
-  const [busyThreadKey, setBusyThreadKey] = useState<string | null>(null);
+  const [state, setState] = useState<RtxOrchestratorState | null>(null);
+  const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
+  const refresh = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setRefreshing(true);
+    try {
+      const next = await readRtxOrchestratorState();
+      setState(next);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not read RedClaw task state.");
+    } finally {
+      if (showSpinner) setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh(false);
+    const interval = window.setInterval(() => void refresh(false), 5_000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  const tasks = useMemo(() => selectRslDelegatedTasks(state?.rslTasks ?? []), [state?.rslTasks]);
   const projectNames = useMemo(
-    () =>
-      new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project.title])),
-    [projects],
+    () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
+    [state?.projects],
   );
-  const providerEntriesByEnvironment = useMemo(
-    () =>
-      deriveProviderEntriesByEnvironment(
-        [...serverConfigs].map(
-          ([environmentId, config]) => [environmentId, config.providers] as const,
-        ),
-      ),
-    [serverConfigs],
-  );
-  const tasks = useMemo(
-    () =>
-      threads
-        .flatMap((thread) => {
-          const providerEntry = providerEntriesByEnvironment
-            .get(thread.environmentId)
-            ?.get(thread.modelSelection.instanceId);
-          const provider = currentTaskProviderForDriver(
-            providerEntry?.driverKind ?? thread.modelSelection.instanceId,
-          );
-          return provider ? [{ thread, presentation: presentCurrentTask(thread, provider) }] : [];
-        })
-        .sort((left, right) => right.thread.updatedAt.localeCompare(left.thread.updatedAt)),
-    [providerEntriesByEnvironment, threads],
-  );
+  const threadById = useMemo(() => {
+    const byId = new Map<string, (typeof threads)[number]>();
+    for (const thread of threads) {
+      byId.set(`${thread.environmentId}:${thread.id}`, thread);
+    }
+    return byId;
+  }, [threads]);
   const counts = useMemo(
     () => ({
-      ongoing: tasks.filter(
-        (task) => !task.presentation.archived && task.presentation.status === "ongoing",
-      ).length,
-      pending: tasks.filter(
-        (task) => !task.presentation.archived && task.presentation.status === "pending",
-      ).length,
-      done: tasks.filter(
-        (task) => !task.presentation.archived && task.presentation.status === "done",
-      ).length,
+      ongoing: tasks.filter((task) => task.status === "ongoing").length,
+      pending: tasks.filter((task) => task.status === "pending").length,
+      done: tasks.filter((task) => task.status === "done").length,
     }),
     [tasks],
   );
-  const visibleTasks = tasks.filter(({ presentation }) => {
-    if (filter === "archived") return presentation.archived;
-    if (presentation.archived) return false;
-    return filter === "all" || presentation.status === filter;
-  });
+  const visibleTasks = tasks.filter((task) => filter === "all" || task.status === filter);
 
-  const openThread = (threadRef: ScopedThreadRef) => {
+  const openThread = (task: RslDelegatedTask) => {
+    if (!task.environmentId || !task.threadId) return;
+    const threadRef = scopeThreadRef(
+      EnvironmentId.make(task.environmentId),
+      ThreadId.make(task.threadId),
+    );
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
     });
-  };
-  const runMutation = async (threadRef: ScopedThreadRef, mutation: () => Promise<unknown>) => {
-    const key = scopedThreadKey(threadRef);
-    setBusyThreadKey(key);
-    try {
-      await mutation();
-    } finally {
-      setBusyThreadKey((current) => (current === key ? null : current));
-    }
   };
 
   return (
@@ -148,12 +118,17 @@ export function RtxCurrentTasksPanel() {
           <div>
             <h2 className="font-semibold text-sm">Current Tasks</h2>
             <p className="mt-0.5 text-muted-foreground text-xs">
-              Active Codex and Claude work across all r3xCode threads.
+              Development tasks delegated by RSL Ai to RTX at RedClaw.
             </p>
           </div>
-          <span className="rounded-full bg-muted px-2 py-1 font-medium text-[10px] text-muted-foreground">
-            {counts.ongoing} active
-          </span>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Refresh RSL tasks"
+            onClick={() => void refresh()}
+          >
+            <RotateCw className={cn(refreshing && "animate-spin")} />
+          </Button>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2">
           {[
@@ -170,6 +145,7 @@ export function RtxCurrentTasksPanel() {
             </div>
           ))}
         </div>
+        {error ? <p className="mt-2 text-destructive text-xs">{error}</p> : null}
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-3 py-2">
@@ -195,105 +171,65 @@ export function RtxCurrentTasksPanel() {
           <div className="flex min-h-48 flex-col items-center justify-center text-center">
             <Circle className="size-7 text-muted-foreground/35" />
             <p className="mt-3 font-medium text-sm">
-              No {filter === "all" ? "current" : filter} tasks
+              No {filter === "all" ? "RSL delegated" : filter} tasks
             </p>
             <p className="mt-1 max-w-64 text-muted-foreground text-xs">
-              Running Codex and Claude threads appear here automatically.
+              An RSL Ai development handoff appears here as soon as RedClaw delegates it to RTX.
             </p>
           </div>
         ) : (
           <div className="space-y-2">
-            {visibleTasks.map(({ thread, presentation }) => {
-              const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-              const threadKey = scopedThreadKey(threadRef);
-              const busy = busyThreadKey === threadKey;
-              const projectName =
-                projectNames.get(`${thread.environmentId}:${thread.projectId}`) ??
-                "Unknown project";
+            {visibleTasks.map((task) => {
+              const thread = threadById.get(`${task.environmentId}:${task.threadId}`);
+              const progress = thread?.planProgress;
+              const progressPercent =
+                progress && progress.totalSteps > 0
+                  ? Math.min(100, Math.round((progress.completedSteps / progress.totalSteps) * 100))
+                  : null;
               return (
-                <article key={threadKey} className="rounded-xl border border-border/70 bg-card p-3">
-                  <button
-                    type="button"
-                    className="flex w-full items-start gap-2.5 text-left"
-                    onClick={() => openThread(threadRef)}
-                  >
-                    <TaskStatusIcon status={presentation.status} />
+                <article key={task.id} className="rounded-xl border border-border/70 bg-card p-3">
+                  <div className="flex w-full items-start gap-2.5 text-left">
+                    <TaskStatusIcon status={task.status} />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-sm leading-snug">
-                        {presentation.title}
-                      </span>
+                      <span className="block font-medium text-sm leading-snug">{task.title}</span>
                       <span className="mt-1 block truncate text-[11px] text-muted-foreground">
                         {[
-                          projectName,
-                          presentation.provider,
-                          presentation.origin,
-                          formatUpdatedAt(thread.updatedAt),
+                          projectNames.get(task.projectId) ?? task.projectId,
+                          task.source,
+                          task.origin,
+                          formatUpdatedAt(task.updatedAt),
                         ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
                     </span>
                     <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {presentation.statusLabel}
+                      {task.statusLabel}
                     </span>
-                  </button>
-                  {presentation.detail ? (
+                  </div>
+                  {progress ? (
                     <div className="mt-2.5 pl-7.5">
                       <div className="truncate text-[11px] text-muted-foreground">
-                        {presentation.detail}
+                        {progress.step}
                       </div>
-                      {presentation.progressPercent !== null ? (
+                      {progressPercent !== null ? (
                         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
                           <div
                             className="h-full rounded-full bg-info"
-                            style={{ width: `${presentation.progressPercent}%` }}
+                            style={{ width: `${progressPercent}%` }}
                           />
                         </div>
                       ) : null}
                     </div>
                   ) : null}
-                  <div className="mt-2.5 flex justify-end gap-1 border-t border-border/60 pt-2">
-                    <Button size="xs" variant="ghost" onClick={() => openThread(threadRef)}>
-                      Open
-                    </Button>
+                  <div className="mt-2.5 flex justify-end border-t border-border/60 pt-2">
                     <Button
-                      size="icon-xs"
+                      size="xs"
                       variant="ghost"
-                      disabled={busy || presentation.status === "ongoing"}
-                      aria-label={presentation.archived ? "Restore thread" : "Archive thread"}
-                      onClick={() =>
-                        void runMutation(threadRef, () =>
-                          presentation.archived
-                            ? unarchiveThread(threadRef)
-                            : archiveThread(threadRef),
-                        )
-                      }
+                      disabled={!task.environmentId || !task.threadId}
+                      onClick={() => openThread(task)}
                     >
-                      {busy ? (
-                        <RotateCw className="animate-spin" />
-                      ) : presentation.archived ? (
-                        <ArchiveRestore />
-                      ) : (
-                        <Archive />
-                      )}
-                    </Button>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      disabled={busy || presentation.status === "ongoing"}
-                      className="text-destructive hover:text-destructive"
-                      aria-label="Delete thread permanently"
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Delete "${presentation.title}" permanently? This cannot be undone.`,
-                          )
-                        )
-                          return;
-                        void runMutation(threadRef, () => deleteThread(threadRef));
-                      }}
-                    >
-                      <Trash2 />
+                      {task.threadId ? "Open r3xCode thread" : "Thread link pending"}
                     </Button>
                   </div>
                 </article>
