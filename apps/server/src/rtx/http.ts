@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import {
   HttpRouter,
@@ -135,6 +136,29 @@ const stateRoute = HttpRouter.add(
   ),
 );
 
+const threadTaskRoute = HttpRouter.add(
+  "GET",
+  "/api/rtx/thread-task",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) return jsonError("Request URL is invalid.", 400);
+    const environmentId = url.value.searchParams.get("environmentId")?.trim() ?? "";
+    const threadId = url.value.searchParams.get("threadId")?.trim() ?? "";
+    if (!environmentId || !threadId) {
+      return jsonError("environmentId and threadId are required.", 400);
+    }
+    return yield* bridgeResponse("thread-task", { environmentId, threadId });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
 const actionRoute = HttpRouter.add(
   "POST",
   "/api/rtx/action",
@@ -163,4 +187,4 @@ const actionRoute = HttpRouter.add(
   ),
 );
 
-export const rtxHttpRouteLayer = Layer.mergeAll(stateRoute, actionRoute);
+export const rtxHttpRouteLayer = Layer.mergeAll(stateRoute, threadTaskRoute, actionRoute);

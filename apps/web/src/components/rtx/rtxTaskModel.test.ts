@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   isRslDelegatedTask,
   resolveRslThreadTaskFilter,
+  rslThreadTaskRetryDelay,
   selectAttachedRslDelegatedTasks,
   selectRslDelegatedTasks,
   selectRslDelegatedTaskForThread,
@@ -115,5 +116,11 @@ describe("RSL delegated task selection", () => {
         "unrelated-thread",
       ),
     ).toBeNull();
+  });
+
+  it("retries a new thread attachment without a five-second dead period", () => {
+    expect(rslThreadTaskRetryDelay(1)).toBe(250);
+    expect(rslThreadTaskRetryDelay(8)).toBe(250);
+    expect(rslThreadTaskRetryDelay(9)).toBe(1_000);
   });
 });

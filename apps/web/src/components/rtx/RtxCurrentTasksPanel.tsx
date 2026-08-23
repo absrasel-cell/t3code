@@ -1,12 +1,11 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { CheckCircle2, Circle, CircleDot, ListTodo } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
 
-import { readRtxOrchestratorState, type RtxOrchestratorState } from "./rtxApi";
+import { readRtxThreadTask, type RtxThreadTaskState } from "./rtxApi";
 import {
-  selectRslDelegatedTaskForThread,
   type RslChecklistItem,
   type RslThreadTaskFilter,
   type RtxTaskStatus,
@@ -122,18 +121,18 @@ export function RtxCurrentTasksPanel({
   readonly initialFilter?: RslThreadTaskFilter;
 }) {
   const [filter, setFilter] = useState<TaskFilter>(initialFilter);
-  const [state, setState] = useState<RtxOrchestratorState | null>(null);
+  const [state, setState] = useState<RtxThreadTaskState | null>(null);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      const next = await readRtxOrchestratorState();
+      const next = await readRtxThreadTask(threadRef.environmentId, threadRef.threadId);
       setState(next);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not read RedClaw task state.");
     }
-  }, []);
+  }, [threadRef.environmentId, threadRef.threadId]);
 
   useEffect(() => {
     void refresh();
@@ -141,19 +140,7 @@ export function RtxCurrentTasksPanel({
     return () => window.clearInterval(interval);
   }, [refresh]);
 
-  const linkedTask = useMemo(
-    () =>
-      selectRslDelegatedTaskForThread(
-        state?.rslTasks ?? [],
-        threadRef.environmentId,
-        threadRef.threadId,
-      ),
-    [state?.rslTasks, threadRef.environmentId, threadRef.threadId],
-  );
-  const projectNames = useMemo(
-    () => new Map((state?.projects ?? []).map((project) => [project.id, project.name])),
-    [state?.projects],
-  );
+  const linkedTask = state?.task ?? null;
   const visibleTasks =
     linkedTask && (filter === "all" || linkedTask.status === filter) ? [linkedTask] : [];
 
@@ -200,7 +187,7 @@ export function RtxCurrentTasksPanel({
                     <span className="block font-medium text-sm leading-snug">{task.title}</span>
                     <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
                       {[
-                        projectNames.get(task.projectId) ?? task.projectId,
+                        state?.projectName || task.projectId,
                         task.source,
                         task.origin,
                         formatUpdatedAt(task.updatedAt),
