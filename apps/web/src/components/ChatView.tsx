@@ -168,7 +168,7 @@ import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import { RtxCurrentTasksPanel } from "./rtx/RtxCurrentTasksPanel";
 import { readRtxThreadTask } from "./rtx/rtxApi";
-import { rslThreadTaskRetryDelay, type RslThreadTaskFilter } from "./rtx/rtxTaskModel";
+import { rslThreadTaskRetryDelay } from "./rtx/rtxTaskModel";
 import { RtxOrchestratorPanel } from "./rtx/RtxOrchestratorPanel";
 import {
   deriveAgentPanelModel,
@@ -1662,29 +1662,21 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadEnvironmentId, activeThreadId],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
-  const [currentTasksAutoSelection, setCurrentTasksAutoSelection] = useState<{
-    readonly threadKey: string;
-    readonly filter: RslThreadTaskFilter;
-  } | null>(null);
   useEffect(() => {
     if (!activeThreadRef || !activeThreadKey) return;
     let cancelled = false;
     let retryTimer: number | null = null;
     let attempts = 0;
     const threadRef = activeThreadRef;
-    const threadKey = activeThreadKey;
     const openCurrentTasksForThread = async () => {
       attempts += 1;
       try {
         const { task } = await readRtxThreadTask(threadRef.environmentId, threadRef.threadId);
         if (cancelled) return;
-        const filter = task?.status === "done" || task?.status === "ongoing" ? task.status : null;
-        if (filter) {
-          setCurrentTasksAutoSelection({ threadKey, filter });
+        if (task) {
           useRightPanelStore.getState().open(threadRef, "current-tasks");
           return;
         }
-        if (task) return;
       } catch {
         // Retry within the same bounded window used for a new attachment to appear.
       }
@@ -6435,10 +6427,6 @@ function ChatViewContent(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
-  const currentTasksInitialFilter =
-    currentTasksAutoSelection?.threadKey === activeThreadKey
-      ? currentTasksAutoSelection.filter
-      : "ongoing";
   const panelToggleControls = (
     <PanelLayoutControls
       terminalAvailable={activeProject !== null}
@@ -6563,11 +6551,7 @@ function ChatViewContent(props: ChatViewProps) {
         threadId={activeThreadRef?.threadId ?? null}
       />
     ) : activeRightPanelSurface?.kind === "current-tasks" ? (
-      <RtxCurrentTasksPanel
-        key={`${activeThreadKey}:${currentTasksInitialFilter}`}
-        threadRef={activeThreadRef}
-        initialFilter={currentTasksInitialFilter}
-      />
+      <RtxCurrentTasksPanel key={activeThreadKey} threadRef={activeThreadRef} />
     ) : activeRightPanelSurface?.kind === "rtx-orchestrator" ? (
       <RtxOrchestratorPanel />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&

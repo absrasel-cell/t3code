@@ -5,21 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
 
 import { readRtxThreadTask, type RtxThreadTaskState } from "./rtxApi";
-import {
-  type RslChecklistItem,
-  type RslThreadTaskFilter,
-  type RtxTaskStatus,
-} from "./rtxTaskModel";
-
-type TaskFilter = "all" | RtxTaskStatus;
-
-const FILTERS: ReadonlyArray<{ id: TaskFilter; label: string }> = [
-  { id: "ongoing", label: "Ongoing" },
-  { id: "pending", label: "Pending" },
-  { id: "done", label: "Done" },
-  { id: "error", label: "Error" },
-  { id: "all", label: "All" },
-];
+import { type RslChecklistItem } from "./rtxTaskModel";
 
 function formatUpdatedAt(value: string): string {
   const date = new Date(value);
@@ -113,14 +99,7 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
   );
 }
 
-export function RtxCurrentTasksPanel({
-  threadRef,
-  initialFilter = "ongoing",
-}: {
-  readonly threadRef: ScopedThreadRef;
-  readonly initialFilter?: RslThreadTaskFilter;
-}) {
-  const [filter, setFilter] = useState<TaskFilter>(initialFilter);
+export function RtxCurrentTasksPanel({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
   const [state, setState] = useState<RtxThreadTaskState | null>(null);
   const [error, setError] = useState("");
 
@@ -141,66 +120,39 @@ export function RtxCurrentTasksPanel({
   }, [refresh]);
 
   const linkedTask = state?.task ?? null;
-  const visibleTasks =
-    linkedTask && (filter === "all" || linkedTask.status === filter) ? [linkedTask] : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background" data-rtx-current-tasks>
-      <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-3 py-2">
-        {FILTERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setFilter(item.id)}
-            className={cn(
-              "shrink-0 rounded-full border px-2.5 py-1 text-[11px] transition",
-              filter === item.id
-                ? "border-foreground/20 bg-foreground text-background"
-                : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
       {error ? (
         <p className="border-b border-border/70 px-3 py-2 text-destructive text-xs">{error}</p>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {visibleTasks.length === 0 ? (
+        {state === null && !error ? null : linkedTask === null ? (
           <div className="flex min-h-48 flex-col items-center justify-center text-center">
             <Circle className="size-7 text-muted-foreground/35" />
-            <p className="mt-3 font-medium text-sm">
-              No {filter === "all" ? "RSL delegated" : filter} tasks
-            </p>
+            <p className="mt-3 font-medium text-sm">No RSL delegated task</p>
             <p className="mt-1 max-w-64 text-muted-foreground text-xs">
-              An RSL Ai development handoff appears here as soon as RedClaw delegates it to RTX.
+              This thread is not linked to an RSL Ai development handoff.
             </p>
           </div>
         ) : (
-          <div>
-            {visibleTasks.map((task) => {
-              return (
-                <article key={task.id}>
-                  <div className="min-w-0">
-                    <span className="block font-medium text-sm leading-snug">{task.title}</span>
-                    <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
-                      {[
-                        state?.projectName || task.projectId,
-                        task.source,
-                        task.origin,
-                        formatUpdatedAt(task.updatedAt),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </div>
-                  <DelegationChecklist items={task.checklist} />
-                </article>
-              );
-            })}
-          </div>
+          <article key={linkedTask.id}>
+            <div className="min-w-0">
+              <span className="block font-medium text-sm leading-snug">{linkedTask.title}</span>
+              <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
+                {[
+                  state?.projectName || linkedTask.projectId,
+                  linkedTask.source,
+                  linkedTask.origin,
+                  formatUpdatedAt(linkedTask.updatedAt),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </div>
+            <DelegationChecklist items={linkedTask.checklist} />
+          </article>
         )}
       </div>
     </div>
