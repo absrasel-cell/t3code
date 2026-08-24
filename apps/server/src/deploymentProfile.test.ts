@@ -25,6 +25,7 @@ const fixedModel = {
   model: "gpt-5.6-sol",
   options: [{ id: "reasoningEffort", value: "high" }],
 } as const;
+const standardDeploymentProfile = "standard";
 
 const createThread = (): Extract<OrchestrationCommand, { type: "thread.create" }> => ({
   type: "thread.create",
@@ -68,7 +69,9 @@ describe("LLP chat-only deployment profile", () => {
         agentActivityPublishing: false,
       },
     });
-    expect(applyDeploymentProfileToEnvironmentDescriptor(descriptor, undefined)).toBe(descriptor);
+    expect(
+      applyDeploymentProfileToEnvironmentDescriptor(descriptor, standardDeploymentProfile),
+    ).toBe(descriptor);
   });
 
   it("denies privileged RPC surfaces independently of token scopes", () => {
@@ -84,7 +87,9 @@ describe("LLP chat-only deployment profile", () => {
         LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
       ),
     ).toBe(true);
-    expect(isRpcMethodAllowedByDeploymentProfile("terminal.open", undefined)).toBe(true);
+    expect(isRpcMethodAllowedByDeploymentProfile("terminal.open", standardDeploymentProfile)).toBe(
+      true,
+    );
   });
 
   it("allows only browser auth, chat reads, dispatch, and signed assets over HTTP", () => {
