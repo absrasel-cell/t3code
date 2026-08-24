@@ -32,6 +32,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { LLP_CHAT_ONLY_UI } from "../../deploymentProfile";
+import { APP_BASE_NAME } from "../../branding";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -81,6 +82,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 });
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+  const brandedForR3xCode = APP_BASE_NAME === "r3xCode";
   return (
     <Link
       aria-label="Go to threads"
@@ -90,14 +92,18 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <T3Wordmark />
+      {brandedForR3xCode ? (
+        <span className="truncate text-sm font-semibold tracking-tight">redXtrm</span>
+      ) : (
+        <T3Wordmark />
+      )}
       <span
         className={cn(
           "-translate-y-px truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Code
+        {brandedForR3xCode ? "Builder" : "Code"}
       </span>
     </Link>
   );

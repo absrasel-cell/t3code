@@ -86,6 +86,8 @@ interface RightPanelTabsProps {
   agentsAvailable: boolean;
   currentTasksAvailable: boolean;
   rtxOrchestratorAvailable: boolean;
+  /** Omit unavailable launchers entirely for intentionally reduced product profiles. */
+  showUnavailableActions?: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -272,6 +274,7 @@ function RightPanelEmptyState(props: {
   agentsAvailable: boolean;
   currentTasksAvailable: boolean;
   rtxOrchestratorAvailable: boolean;
+  showUnavailableActions?: boolean;
   liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
@@ -363,6 +366,7 @@ function RightPanelEmptyState(props: {
   type SurfaceAction = (typeof actions)[number];
 
   const availableActions = actions.filter((action) => action.available);
+  const displayedActions = props.showUnavailableActions === false ? availableActions : actions;
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -469,7 +473,7 @@ function RightPanelEmptyState(props: {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) =>
+          {displayedActions.map((action) =>
             action.available ? (
               <button
                 key={action.label}
@@ -710,6 +714,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddRtxOrchestrator,
     },
   ] as const;
+  const displayedAddSurfaceActions =
+    props.showUnavailableActions === false
+      ? addSurfaceActions.filter((action) => action.available)
+      : addSurfaceActions;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
@@ -970,7 +978,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   className="min-w-44"
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {addSurfaceActions.map((action) => {
+                  {displayedAddSurfaceActions.map((action) => {
                     const Icon = action.icon;
                     return (
                       <SurfaceMenuItem
@@ -1011,6 +1019,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             agentsAvailable={props.agentsAvailable}
             currentTasksAvailable={props.currentTasksAvailable}
             rtxOrchestratorAvailable={props.rtxOrchestratorAvailable}
+            {...(props.showUnavailableActions === undefined
+              ? {}
+              : { showUnavailableActions: props.showUnavailableActions })}
             liveAgentCount={props.liveAgentCount}
           />
         ) : (

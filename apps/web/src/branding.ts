@@ -1,5 +1,6 @@
 import type { DesktopAppBranding } from "@t3tools/contracts";
 import { formatAppDisplayName } from "./branding.logic";
+import { DEPLOYMENT_UI_CAPABILITIES } from "./deploymentProfile";
 
 function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
   if (typeof window === "undefined") {
@@ -16,9 +17,11 @@ export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL =
   HOSTED_APP_CHANNEL === "nightly" ? "Nightly" : HOSTED_APP_CHANNEL === "latest" ? "Latest" : null;
-export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+export const APP_BASE_NAME =
+  injectedDesktopAppBranding?.baseName ?? DEPLOYMENT_UI_CAPABILITIES.appBaseName;
 export const APP_STAGE_LABEL =
   injectedDesktopAppBranding?.stageLabel ??
+  DEPLOYMENT_UI_CAPABILITIES.appStageLabel ??
   HOSTED_APP_CHANNEL_LABEL ??
   (import.meta.env.DEV ? "Dev" : "Alpha");
 export const APP_DISPLAY_NAME =

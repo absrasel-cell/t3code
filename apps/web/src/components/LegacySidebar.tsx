@@ -22,6 +22,7 @@ import {
   ThreadWorktreeIndicator,
 } from "./ThreadStatusIndicators";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { plainThreadTitle, ThreadOriginTitle } from "./threadOrigin";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
 import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from "react";
@@ -735,12 +736,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     className="min-w-0 flex-1 truncate text-sm"
                     data-testid={`thread-title-${thread.id}`}
                   >
-                    {thread.title}
+                    <ThreadOriginTitle title={thread.title} />
                   </span>
                 }
               />
               <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">
-                {thread.title}
+                {plainThreadTitle(thread.title)}
               </TooltipPopup>
             </Tooltip>
           )}

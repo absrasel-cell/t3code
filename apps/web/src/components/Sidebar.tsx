@@ -118,6 +118,7 @@ import {
   resolveThreadRouteTarget,
 } from "../threadRoutes";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
+import { plainThreadTitle, ThreadOriginTitle } from "./threadOrigin";
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
@@ -295,7 +296,7 @@ function SidebarThreadTooltip({
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
-          {thread.title}
+          {plainThreadTitle(thread.title)}
         </div>
         <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
           {projectTitle ? (
@@ -1149,7 +1150,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         isRegeneratingTitle && "opacity-[0.55]",
       )}
     >
-      {thread.title}
+      <ThreadOriginTitle title={thread.title} />
     </span>
   );
 
@@ -1661,7 +1662,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
               aria-label={
-                props.projectTitle ? `${thread.title}, ${props.projectTitle}` : thread.title
+                props.projectTitle
+                  ? `${plainThreadTitle(thread.title)}, ${props.projectTitle}`
+                  : plainThreadTitle(thread.title)
               }
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
@@ -1681,7 +1684,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             className="size-4 shrink-0"
             fallbackIcon={MessageSquareIcon}
           />
-          <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <span className="min-w-0 flex-1 truncate">
+            <ThreadOriginTitle title={thread.title} />
+          </span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
           </span>

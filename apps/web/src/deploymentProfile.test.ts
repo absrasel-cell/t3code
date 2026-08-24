@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { isLlpChatOnlyRestrictedRoute } from "./deploymentProfile";
+import {
+  deploymentUiCapabilitiesForProfile,
+  isLlpChatOnlyRestrictedRoute,
+} from "./deploymentProfile";
 
 describe("LLP chat-only routes", () => {
   it("keeps chat and pairing reachable", () => {
@@ -19,5 +22,17 @@ describe("LLP chat-only routes", () => {
     ]) {
       expect(isLlpChatOnlyRestrictedRoute(pathname)).toBe(true);
     }
+  });
+
+  it("keeps the branded product shell and thread TODOs without exposing internal tools", () => {
+    expect(deploymentUiCapabilitiesForProfile("llp-chat-only")).toEqual({
+      appBaseName: "r3xCode",
+      appStageLabel: null,
+      currentTasks: true,
+      productShell: true,
+      projectAdministration: false,
+      rtxOrchestrator: false,
+      workspaceTools: false,
+    });
   });
 });

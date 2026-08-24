@@ -1665,7 +1665,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   useEffect(() => {
-    if (!activeThreadRef || !activeThreadKey) return;
+    if (LLP_CHAT_ONLY_UI || !activeThreadRef || !activeThreadKey) return;
     let cancelled = false;
     let retryTimer: number | null = null;
     let attempts = 0;
@@ -1758,10 +1758,19 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
-  const canMaximizeRightPanel = rightPanelOpen && !shouldUseRightPanelSheet;
+  const productRightPanelSurfaces = LLP_CHAT_ONLY_UI
+    ? rightPanelState.surfaces.filter((surface) => surface.kind === "current-tasks")
+    : rightPanelState.surfaces;
+  const productActiveRightPanelSurface =
+    !LLP_CHAT_ONLY_UI || activeRightPanelSurface?.kind === "current-tasks"
+      ? activeRightPanelSurface
+      : null;
+  const productRightPanelOpen =
+    rightPanelOpen && (!LLP_CHAT_ONLY_UI || productActiveRightPanelSurface !== null);
+  const canMaximizeRightPanel = productRightPanelOpen && !shouldUseRightPanelSheet;
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
+  const inlineRightPanelOwnsTitleBar = productRightPanelOpen && !shouldUseRightPanelSheet;
 
   useEffect(() => {
     if (!activeThreadRef) return;
@@ -3616,6 +3625,10 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
+    if (LLP_CHAT_ONLY_UI) {
+      useRightPanelStore.getState().toggle(activeThreadRef, "current-tasks");
+      return;
+    }
     if (rightPanelOpen) {
       closePreviewPanel();
       return;
@@ -4965,7 +4978,6 @@ function ChatViewContent(props: ChatViewProps) {
       if (
         LLP_CHAT_ONLY_UI &&
         (command.startsWith("terminal.") ||
-          command.startsWith("rightPanel.") ||
           command.startsWith("preview.") ||
           command.startsWith("modelPicker.") ||
           command.startsWith("filePicker.") ||
@@ -6471,24 +6483,29 @@ function ChatViewContent(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
-  const panelToggleControls = LLP_CHAT_ONLY_UI ? null : (
+  const panelToggleControls = (
     <PanelLayoutControls
+      showTerminalControl={!LLP_CHAT_ONLY_UI}
       terminalAvailable={activeProject !== null}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
-      rightPanelAvailable={activeProject !== null}
-      rightPanelOpen={rightPanelOpen}
+      rightPanelAvailable={activeThreadRef !== null}
+      rightPanelOpen={productRightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       // Suppressed while the Agents surface is visible: the roster itself is
       // on screen, so the toggle badge would be pointing at nothing.
       liveAgentCount={
-        rightPanelOpen && activeRightPanelSurface?.kind === "agents" ? 0 : agentPanelModel.liveCount
+        productRightPanelOpen && productActiveRightPanelSurface?.kind === "agents"
+          ? 0
+          : LLP_CHAT_ONLY_UI
+            ? 0
+            : agentPanelModel.liveCount
       }
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
   );
-  const panelLayoutControls = LLP_CHAT_ONLY_UI ? null : (
+  const panelLayoutControls = (
     <div
       className={cn(
         // One inset in both states: the controls move between containers when
@@ -6498,7 +6515,7 @@ function ChatViewContent(props: ChatViewProps) {
       )}
       data-workspace-titlebar-controls
     >
-      {rightPanelOpen && !shouldUseRightPanelSheet ? (
+      {productRightPanelOpen && !shouldUseRightPanelSheet ? (
         <RightPanelMaximizeControl
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
@@ -6507,122 +6524,127 @@ function ChatViewContent(props: ChatViewProps) {
       {panelToggleControls}
     </div>
   );
-  const rightPanelContent =
-    !LLP_CHAT_ONLY_UI && activeThreadRef ? (
-      activeRightPanelSurface?.kind === "preview" ? (
-        <Suspense fallback={null}>
-          <PreviewPanel
-            mode="embedded"
-            threadRef={activeThreadRef}
-            tabId={activeRightPanelSurface.resourceId}
-            configuredUrls={configuredPreviewUrls}
-            visible
-            onSendAnnotation={(annotation, image) => {
-              void onSend(undefined, "foreground", { annotation, image });
-            }}
-          />
-        </Suspense>
-      ) : activeRightPanelSurface?.kind === "terminal" ? (
-        <PersistentThreadTerminalPanel
+  const rightPanelContent = activeThreadRef ? (
+    activeRightPanelSurface?.kind === "preview" ? (
+      <Suspense fallback={null}>
+        <PreviewPanel
+          mode="embedded"
           threadRef={activeThreadRef}
-          surface={activeRightPanelSurface}
-          launchContext={activeTerminalLaunchContext ?? null}
-          focusRequestId={terminalFocusRequestId}
-          keybindings={keybindings}
-          onAddTerminalContext={addTerminalContextToDraft}
-          onSplitTerminal={splitPanelTerminal}
-          onSplitTerminalVertical={splitPanelTerminalVertical}
-          onNewTerminal={addTerminalSurface}
-          onActiveTerminalChange={activatePanelTerminal}
-          onCloseTerminal={closePanelTerminal}
-          splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-          splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-          newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-          closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-        />
-      ) : activeRightPanelSurface?.kind === "diff" ? (
-        <Suspense fallback={null}>
-          <DiffPanel
-            key={`${activeThreadKey}:${diffPanelGitStatusResolutionKey}`}
-            mode="embedded"
-            composerDraftTarget={composerDraftTarget}
-            initialGitScope={initialDiffPanelGitScope}
-          />
-        </Suspense>
-      ) : activeRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
-        <PullRequestDetailGhost />
-      ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
-        <PullRequestsUnavailableState
-          title="Pull requests unavailable"
-          error="Update this environment's T3 Code server to browse pull requests."
-        />
-      ) : activeRightPanelSurface?.kind === "pull-request" ? (
-        // No onClose: the surface tab's own X owns closing here, and a second X in the header
-        // would be the same action twice. The thread context also drops the checkout button, so it
-        // is only right for the thread's own pull request, whose branch is already under the
-        // reader's feet. A link the agent wrote can open any other one here, and that one has to be
-        // checkable out like it is anywhere else.
-        <PullRequestDetailPanel
-          key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
-          environmentId={activeThread.environmentId}
-          reference={{
-            projectId: activeRightPanelSurface.projectId as ProjectId,
-            repository: activeRightPanelSurface.repository,
-            number: activeRightPanelSurface.number,
+          tabId={activeRightPanelSurface.resourceId}
+          configuredUrls={configuredPreviewUrls}
+          visible
+          onSendAnnotation={(annotation, image) => {
+            void onSend(undefined, "foreground", { annotation, image });
           }}
-          context={
-            isThreadOwnPullRequest(
-              {
-                projectId: activeProject?.id ?? null,
-                repository: threadRepository,
-                number: activeThreadPr?.number ?? null,
-              },
-              {
-                projectId: activeRightPanelSurface.projectId,
-                repository: activeRightPanelSurface.repository,
-                number: activeRightPanelSurface.number,
-              },
-            )
-              ? "thread"
-              : "page"
-          }
+        />
+      </Suspense>
+    ) : activeRightPanelSurface?.kind === "terminal" ? (
+      <PersistentThreadTerminalPanel
+        threadRef={activeThreadRef}
+        surface={activeRightPanelSurface}
+        launchContext={activeTerminalLaunchContext ?? null}
+        focusRequestId={terminalFocusRequestId}
+        keybindings={keybindings}
+        onAddTerminalContext={addTerminalContextToDraft}
+        onSplitTerminal={splitPanelTerminal}
+        onSplitTerminalVertical={splitPanelTerminalVertical}
+        onNewTerminal={addTerminalSurface}
+        onActiveTerminalChange={activatePanelTerminal}
+        onCloseTerminal={closePanelTerminal}
+        splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+        splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+        newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+        closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+      />
+    ) : activeRightPanelSurface?.kind === "diff" ? (
+      <Suspense fallback={null}>
+        <DiffPanel
+          key={`${activeThreadKey}:${diffPanelGitStatusResolutionKey}`}
+          mode="embedded"
           composerDraftTarget={composerDraftTarget}
-          onStateChange={handlePullRequestTabStatusChange}
+          initialGitScope={initialDiffPanelGitScope}
         />
-      ) : activeRightPanelSurface?.kind === "agents" ? (
-        <AgentsPanel
-          model={agentPanelModel}
-          environmentId={activeThreadRef?.environmentId ?? null}
-          threadId={activeThreadRef?.threadId ?? null}
+      </Suspense>
+    ) : activeRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
+      <PullRequestDetailGhost />
+    ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
+      <PullRequestsUnavailableState
+        title="Pull requests unavailable"
+        error="Update this environment's T3 Code server to browse pull requests."
+      />
+    ) : activeRightPanelSurface?.kind === "pull-request" ? (
+      // No onClose: the surface tab's own X owns closing here, and a second X in the header
+      // would be the same action twice. The thread context also drops the checkout button, so it
+      // is only right for the thread's own pull request, whose branch is already under the
+      // reader's feet. A link the agent wrote can open any other one here, and that one has to be
+      // checkable out like it is anywhere else.
+      <PullRequestDetailPanel
+        key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
+        environmentId={activeThread.environmentId}
+        reference={{
+          projectId: activeRightPanelSurface.projectId as ProjectId,
+          repository: activeRightPanelSurface.repository,
+          number: activeRightPanelSurface.number,
+        }}
+        context={
+          isThreadOwnPullRequest(
+            {
+              projectId: activeProject?.id ?? null,
+              repository: threadRepository,
+              number: activeThreadPr?.number ?? null,
+            },
+            {
+              projectId: activeRightPanelSurface.projectId,
+              repository: activeRightPanelSurface.repository,
+              number: activeRightPanelSurface.number,
+            },
+          )
+            ? "thread"
+            : "page"
+        }
+        composerDraftTarget={composerDraftTarget}
+        onStateChange={handlePullRequestTabStatusChange}
+      />
+    ) : activeRightPanelSurface?.kind === "agents" ? (
+      <AgentsPanel
+        model={agentPanelModel}
+        environmentId={activeThreadRef?.environmentId ?? null}
+        threadId={activeThreadRef?.threadId ?? null}
+      />
+    ) : activeRightPanelSurface?.kind === "current-tasks" ? (
+      <RtxCurrentTasksPanel
+        key={activeThreadKey}
+        localOnly={LLP_CHAT_ONLY_UI}
+        progress={activeComposerTasksProgress}
+        steps={activePlan?.steps ?? []}
+        threadRef={activeThreadRef}
+      />
+    ) : activeRightPanelSurface?.kind === "rtx-orchestrator" ? (
+      <RtxOrchestratorPanel />
+    ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
+      activeProject &&
+      activeWorkspaceRoot ? (
+      <Suspense fallback={null}>
+        <FilePreviewPanel
+          key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
+          environmentId={activeProject.environmentId}
+          cwd={activeWorkspaceRoot}
+          projectName={activeProject.title}
+          threadRef={activeThreadRef}
+          composerDraftTarget={composerDraftTarget}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          relativePath={
+            activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
+          }
+          revealLine={activeFileSurface?.revealLine ?? null}
+          revealRequestId={activeFileSurface?.revealRequestId ?? 0}
+          onOpenFile={openFileSurface}
+          onPendingChange={handleFilePendingChange}
         />
-      ) : activeRightPanelSurface?.kind === "current-tasks" ? (
-        <RtxCurrentTasksPanel key={activeThreadKey} threadRef={activeThreadRef} />
-      ) : activeRightPanelSurface?.kind === "rtx-orchestrator" ? (
-        <RtxOrchestratorPanel />
-      ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
-        activeProject &&
-        activeWorkspaceRoot ? (
-        <Suspense fallback={null}>
-          <FilePreviewPanel
-            key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
-            environmentId={activeProject.environmentId}
-            cwd={activeWorkspaceRoot}
-            projectName={activeProject.title}
-            threadRef={activeThreadRef}
-            composerDraftTarget={composerDraftTarget}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            relativePath={
-              activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
-            }
-            revealLine={activeFileSurface?.revealLine ?? null}
-            revealRequestId={activeFileSurface?.revealRequestId ?? 0}
-            onOpenFile={openFileSurface}
-            onPendingChange={handleFilePendingChange}
-          />
-        </Suspense>
-      ) : null
-    ) : null;
+      </Suspense>
+    ) : null
+  ) : null;
 
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
@@ -6633,13 +6655,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {!LLP_CHAT_ONLY_UI && rightPanelOpen && !shouldUseRightPanelSheet
-        ? panelLayoutControls
-        : null}
+      {productRightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-          !LLP_CHAT_ONLY_UI && rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+          rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
@@ -6650,7 +6670,7 @@ function ChatViewContent(props: ChatViewProps) {
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
           className="relative bg-background"
         >
-          {!LLP_CHAT_ONLY_UI && !rightPanelOpen ? panelLayoutControls : null}
+          {!productRightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
             {...(!supportsPullRequests || threadRepository === null
               ? {}
@@ -6671,7 +6691,7 @@ function ChatViewContent(props: ChatViewProps) {
             }
             keybindings={keybindings}
             availableEditors={availableEditors}
-            rightPanelOpen={!LLP_CHAT_ONLY_UI && rightPanelOpen}
+            rightPanelOpen={productRightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}
@@ -6784,7 +6804,9 @@ function ChatViewContent(props: ChatViewProps) {
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
               className={cn(
-                rightPanelOpen && activeRightPanelSurface?.kind === "rtx-orchestrator" && "hidden",
+                productRightPanelOpen &&
+                  productActiveRightPanelSurface?.kind === "rtx-orchestrator" &&
+                  "hidden",
                 isDraftHeroState
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2",
@@ -7054,12 +7076,12 @@ function ChatViewContent(props: ChatViewProps) {
             )}
       </div>
 
-      {!LLP_CHAT_ONLY_UI && !shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {!shouldUseRightPanelSheet && productRightPanelOpen && activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
-          surfaces={rightPanelState.surfaces}
-          activeSurfaceId={activeRightPanelSurface?.id ?? null}
+          surfaces={productRightPanelSurfaces}
+          activeSurfaceId={productActiveRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
           previewSessions={activePreviewState.sessions}
           desktopByTabId={activePreviewState.desktopByTabId}
@@ -7079,21 +7101,22 @@ function ChatViewContent(props: ChatViewProps) {
           onAddAgents={addAgentsSurface}
           onAddCurrentTasks={addCurrentTasksSurface}
           onAddRtxOrchestrator={addRtxOrchestratorSurface}
-          browserAvailable={isPreviewSupportedInRuntime()}
-          terminalAvailable={activeProject !== null}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          agentsAvailable
+          browserAvailable={!LLP_CHAT_ONLY_UI && isPreviewSupportedInRuntime()}
+          terminalAvailable={!LLP_CHAT_ONLY_UI && activeProject !== null}
+          diffAvailable={!LLP_CHAT_ONLY_UI && isServerThread && isGitRepo}
+          filesAvailable={!LLP_CHAT_ONLY_UI && activeProject !== null}
+          pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
+          agentsAvailable={!LLP_CHAT_ONLY_UI}
           currentTasksAvailable
-          rtxOrchestratorAvailable
+          rtxOrchestratorAvailable={!LLP_CHAT_ONLY_UI}
+          showUnavailableActions={!LLP_CHAT_ONLY_UI}
           pullRequestStatuses={pullRequestTabStatuses}
-          liveAgentCount={agentPanelModel.liveCount}
+          liveAgentCount={LLP_CHAT_ONLY_UI ? 0 : agentPanelModel.liveCount}
         >
           {rightPanelContent}
         </RightPanelTabs>
       ) : null}
-      {!LLP_CHAT_ONLY_UI && shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {shouldUseRightPanelSheet && productRightPanelOpen && activeThreadRef ? (
         <RightPanelSheet open onClose={closePreviewPanel}>
           <RightPanelTabs
             mode="sheet"
@@ -7102,8 +7125,8 @@ function ChatViewContent(props: ChatViewProps) {
             // right inset plus mr-px), so the cluster does not creep when
             // the sheet opens.
             layoutControls={<div className="mr-px flex items-center">{panelToggleControls}</div>}
-            surfaces={rightPanelState.surfaces}
-            activeSurfaceId={activeRightPanelSurface?.id ?? null}
+            surfaces={productRightPanelSurfaces}
+            activeSurfaceId={productActiveRightPanelSurface?.id ?? null}
             pendingSurfaceIds={pendingFileSurfaceIds}
             previewSessions={activePreviewState.sessions}
             desktopByTabId={activePreviewState.desktopByTabId}
@@ -7123,16 +7146,17 @@ function ChatViewContent(props: ChatViewProps) {
             onAddAgents={addAgentsSurface}
             onAddCurrentTasks={addCurrentTasksSurface}
             onAddRtxOrchestrator={addRtxOrchestratorSurface}
-            browserAvailable={isPreviewSupportedInRuntime()}
-            terminalAvailable={activeProject !== null}
-            diffAvailable={isServerThread && isGitRepo}
-            filesAvailable={activeProject !== null}
-            pullRequestAvailable={pullRequestSurfaceAvailable}
-            agentsAvailable
+            browserAvailable={!LLP_CHAT_ONLY_UI && isPreviewSupportedInRuntime()}
+            terminalAvailable={!LLP_CHAT_ONLY_UI && activeProject !== null}
+            diffAvailable={!LLP_CHAT_ONLY_UI && isServerThread && isGitRepo}
+            filesAvailable={!LLP_CHAT_ONLY_UI && activeProject !== null}
+            pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
+            agentsAvailable={!LLP_CHAT_ONLY_UI}
             currentTasksAvailable
-            rtxOrchestratorAvailable
+            rtxOrchestratorAvailable={!LLP_CHAT_ONLY_UI}
+            showUnavailableActions={!LLP_CHAT_ONLY_UI}
             pullRequestStatuses={pullRequestTabStatuses}
-            liveAgentCount={agentPanelModel.liveCount}
+            liveAgentCount={LLP_CHAT_ONLY_UI ? 0 : agentPanelModel.liveCount}
           >
             {rightPanelContent}
           </RightPanelTabs>

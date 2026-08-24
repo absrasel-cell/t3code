@@ -34,6 +34,10 @@ const secondSurface = {
   kind: "preview" as const,
   resourceId: "tab-2",
 };
+const currentTasksSurface = {
+  id: "current-tasks" as const,
+  kind: "current-tasks" as const,
+};
 const sessions: Readonly<Record<string, PreviewSessionSnapshot>> = {
   "tab-1": {
     threadId: "thread-1",
@@ -83,12 +87,19 @@ function renderTabs(
   second?: DesktopPreviewFavicon,
   audio?: { audible?: boolean; audioMuted?: boolean },
   previewRuntimeTabId: ((tabId: string) => string) | null = (tabId) => `runtime:${tabId}`,
+  restricted = false,
 ) {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
-      surfaces={second ? [previewSurface, secondSurface] : [previewSurface]}
-      activeSurfaceId={previewSurface.id}
+      surfaces={
+        restricted
+          ? [currentTasksSurface]
+          : second
+            ? [previewSurface, secondSurface]
+            : [previewSurface]
+      }
+      activeSurfaceId={restricted ? currentTasksSurface.id : previewSurface.id}
       pendingSurfaceIds={new Set()}
       previewSessions={sessions}
       desktopByTabId={{
@@ -112,19 +123,35 @@ function renderTabs(
       onAddCurrentTasks={() => undefined}
       onAddRtxOrchestrator={() => undefined}
       liveAgentCount={0}
-      browserAvailable
+      browserAvailable={!restricted}
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
       agentsAvailable={false}
       currentTasksAvailable
-      rtxOrchestratorAvailable
+      rtxOrchestratorAvailable={!restricted}
+      showUnavailableActions={!restricted}
     >
       <div>content</div>
     </RightPanelTabs>,
   );
 }
+
+describe("RightPanelTabs reduced product profile", () => {
+  it("keeps Current Tasks and omits privileged workspace launchers", () => {
+    const html = renderTabs(null, undefined, undefined, undefined, true);
+
+    expect(html).toContain("Current Tasks");
+    expect(html).not.toContain(">Browser<");
+    expect(html).not.toContain(">Terminal<");
+    expect(html).not.toContain(">Files<");
+    expect(html).not.toContain(">Diff<");
+    expect(html).not.toContain(">Pull request<");
+    expect(html).not.toContain(">Agents<");
+    expect(html).not.toContain(">RTX Orchestrator<");
+  });
+});
 
 describe("RightPanelTabs preview favicon", () => {
   it("prefers a live capture and never asks Google about a private hostname", () => {

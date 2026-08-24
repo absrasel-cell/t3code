@@ -3,9 +3,21 @@ import { CheckCircle2, Circle, CircleDot, ListTodo } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import type { ComposerTaskStep, ComposerTasksProgress } from "~/components/chat/ComposerTasksBadge";
 
 import { readRtxThreadTask, type RtxThreadTaskState } from "./rtxApi";
 import { type RslChecklistItem } from "./rtxTaskModel";
+
+const EMPTY_THREAD_TODO_STEPS: readonly ComposerTaskStep[] = [];
+
+function keyedThreadTodoSteps(steps: readonly ComposerTaskStep[]) {
+  const occurrences = new Map<string, number>();
+  return steps.map((item, index) => {
+    const occurrence = occurrences.get(item.step) ?? 0;
+    occurrences.set(item.step, occurrence + 1);
+    return { index, item, key: `${item.step}:${occurrence}` };
+  });
+}
 
 function formatUpdatedAt(value: string): string {
   const date = new Date(value);
@@ -99,11 +111,108 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
   );
 }
 
-export function RtxCurrentTasksPanel({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
+function ThreadTodoChecklist({
+  progress,
+  steps,
+}: {
+  readonly progress: ComposerTasksProgress | null;
+  readonly steps: readonly ComposerTaskStep[];
+}) {
+  const completed = steps.filter((item) => item.status === "completed").length;
+  const nextPendingIndex = steps.findIndex((item) => item.status === "pending");
+
+  return (
+    <article data-thread-todo="true">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-border/60 border-y py-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+        <span className="flex items-center gap-1.5">
+          <ListTodo aria-hidden className="size-3.5" />
+          Thread TODO
+        </span>
+        <span className="tabular-nums">
+          Status · {completed}/{steps.length}
+        </span>
+      </div>
+      <div className="divide-y divide-border/45" role="list">
+        {keyedThreadTodoSteps(steps).map(({ index, item, key }) => {
+          const label =
+            item.status === "completed"
+              ? "done"
+              : item.status === "inProgress"
+                ? "now"
+                : index === nextPendingIndex
+                  ? "up next"
+                  : "pending";
+          return (
+            <div
+              key={key}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 py-2.5 text-[11px] leading-4"
+              role="listitem"
+            >
+              <span className="flex min-w-0 items-start gap-2.5">
+                {item.status === "completed" ? (
+                  <CheckCircle2 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-success" />
+                ) : item.status === "inProgress" ? (
+                  <CircleDot aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
+                ) : (
+                  <Circle
+                    aria-hidden
+                    className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/35"
+                  />
+                )}
+                <span
+                  className={cn(
+                    "min-w-0",
+                    item.status === "completed"
+                      ? "text-muted-foreground/60"
+                      : item.status === "inProgress"
+                        ? "text-foreground"
+                        : "text-muted-foreground/75",
+                  )}
+                >
+                  {item.step}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 pt-px text-[10px] tabular-nums",
+                  item.status === "inProgress"
+                    ? "text-info"
+                    : item.status === "completed"
+                      ? "text-success/70"
+                      : "text-muted-foreground/45",
+                )}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {progress ? (
+        <p className="border-border/45 border-t pt-2 text-[10px] text-muted-foreground">
+          Current · {progress.step}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+export function RtxCurrentTasksPanel({
+  localOnly = false,
+  progress = null,
+  steps = EMPTY_THREAD_TODO_STEPS,
+  threadRef,
+}: {
+  readonly localOnly?: boolean;
+  readonly progress?: ComposerTasksProgress | null;
+  readonly steps?: readonly ComposerTaskStep[];
+  readonly threadRef: ScopedThreadRef;
+}) {
   const [state, setState] = useState<RtxThreadTaskState | null>(null);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
+    if (localOnly) return;
     try {
       const next = await readRtxThreadTask(threadRef.environmentId, threadRef.threadId);
       setState(next);
@@ -111,24 +220,35 @@ export function RtxCurrentTasksPanel({ threadRef }: { readonly threadRef: Scoped
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not read RedClaw task state.");
     }
-  }, [threadRef.environmentId, threadRef.threadId]);
+  }, [localOnly, threadRef.environmentId, threadRef.threadId]);
 
   useEffect(() => {
+    if (localOnly) return;
     void refresh();
     const interval = window.setInterval(() => void refresh(), 5_000);
     return () => window.clearInterval(interval);
-  }, [refresh]);
+  }, [localOnly, refresh]);
 
   const linkedTask = state?.task ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background" data-rtx-current-tasks>
-      {error ? (
+      {!localOnly && error ? (
         <p className="border-b border-border/70 px-3 py-2 text-destructive text-xs">{error}</p>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {state === null && !error ? null : linkedTask === null ? (
+        {localOnly && steps.length > 0 ? (
+          <ThreadTodoChecklist progress={progress} steps={steps} />
+        ) : localOnly ? (
+          <div className="flex min-h-48 flex-col items-center justify-center text-center">
+            <Circle className="size-7 text-muted-foreground/35" />
+            <p className="mt-3 font-medium text-sm">No thread TODOs yet</p>
+            <p className="mt-1 max-w-64 text-muted-foreground text-xs">
+              Tasks appear here when the development agent publishes a plan for this thread.
+            </p>
+          </div>
+        ) : state === null && !error ? null : linkedTask === null ? (
           <div className="flex min-h-48 flex-col items-center justify-center text-center">
             <Circle className="size-7 text-muted-foreground/35" />
             <p className="mt-3 font-medium text-sm">No RSL delegated task</p>

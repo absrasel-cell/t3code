@@ -46,6 +46,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 import { LLP_CHAT_ONLY_UI } from "../../deploymentProfile";
+import { plainThreadTitle, ThreadOriginTitle } from "../threadOrigin";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -342,7 +343,7 @@ export const ChatHeader = memo(function ChatHeader({
                   <button
                     ref={titleButtonRef}
                     type="button"
-                    aria-label={`Thread actions for ${activeThreadTitle}`}
+                    aria-label={`Thread actions for ${plainThreadTitle(activeThreadTitle)}`}
                     aria-haspopup="menu"
                     onClick={openMenuFromTitle}
                     onDoubleClick={handleTitleDoubleClick}
@@ -351,25 +352,30 @@ export const ChatHeader = memo(function ChatHeader({
                   />
                 }
               >
-                <h2 className="min-w-0 truncate">{activeThreadTitle}</h2>
+                <h2 className="min-w-0 truncate">
+                  <ThreadOriginTitle title={activeThreadTitle} />
+                </h2>
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
                   className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
                 />
               </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+              <TooltipPopup side="top">{plainThreadTitle(activeThreadTitle)}</TooltipPopup>
             </Tooltip>
           ) : (
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <h2 aria-label={activeThreadTitle} className="min-w-0 flex-1 truncate">
-                    {activeThreadTitle}
+                  <h2
+                    aria-label={plainThreadTitle(activeThreadTitle)}
+                    className="min-w-0 flex-1 truncate"
+                  >
+                    <ThreadOriginTitle title={activeThreadTitle} />
                   </h2>
                 }
               />
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+              <TooltipPopup side="top">{plainThreadTitle(activeThreadTitle)}</TooltipPopup>
             </Tooltip>
           )}
         </WorkspaceBreadcrumbItem>
