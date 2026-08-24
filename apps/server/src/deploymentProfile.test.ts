@@ -15,6 +15,7 @@ import {
   commandDenialReasonForDeploymentProfile,
   isHttpRequestAllowedByDeploymentProfile,
   isRpcMethodAllowedByDeploymentProfile,
+  shouldPreserveBundledWebIcons,
 } from "./deploymentProfile.ts";
 
 const commandId = CommandId.make("command-1");
@@ -42,6 +43,11 @@ const createThread = (): Extract<OrchestrationCommand, { type: "thread.create" }
 });
 
 describe("LLP chat-only deployment profile", () => {
+  it("preserves the web build's branded icon set", () => {
+    expect(shouldPreserveBundledWebIcons(LLP_CHAT_ONLY_DEPLOYMENT_PROFILE)).toBe(true);
+    expect(shouldPreserveBundledWebIcons(standardDeploymentProfile)).toBe(false);
+  });
+
   it("does not advertise hidden server capabilities", () => {
     const descriptor = {
       environmentId: EnvironmentId.make("environment-1"),

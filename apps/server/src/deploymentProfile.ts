@@ -14,6 +14,12 @@ export function isLlpChatOnlyDeploymentProfile(
   return profile === LLP_CHAT_ONLY_DEPLOYMENT_PROFILE;
 }
 
+export function shouldPreserveBundledWebIcons(
+  profile = process.env.T3CODE_DEPLOYMENT_PROFILE,
+): boolean {
+  return isLlpChatOnlyDeploymentProfile(profile);
+}
+
 export function applyDeploymentProfileToEnvironmentDescriptor(
   descriptor: ExecutionEnvironmentDescriptor,
   profile = process.env.T3CODE_DEPLOYMENT_PROFILE,

@@ -28,6 +28,7 @@ import {
   ServerCliPublishIconSourceMissingError,
   ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
+import { shouldPreserveBundledWebIcons } from "../src/deploymentProfile.ts";
 
 interface PackageJson {
   name: string;
@@ -167,7 +168,11 @@ const buildCmd = Command.make(
 
       if (yield* fs.exists(webDist)) {
         yield* fs.copy(webDist, clientTarget);
-        yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
+        if (shouldPreserveBundledWebIcons()) {
+          yield* Effect.log("[cli] Preserved branded web icons from dist");
+        } else {
+          yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
+        }
         yield* Effect.log("[cli] Bundled web app into dist/client");
       } else {
         yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");
