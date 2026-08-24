@@ -182,6 +182,7 @@ const sessionIssueCommand = Command.make("issue", {
   ttl: ttlFlag,
   label: labelFlag,
   subject: subjectFlag,
+  scope: scopeFlag,
   tokenOnly: tokenOnlyFlag,
   json: jsonFlag,
 }).pipe(
@@ -192,7 +193,7 @@ const sessionIssueCommand = Command.make("issue", {
       (environmentAuth) =>
         Effect.gen(function* () {
           const issued = yield* environmentAuth.issueSession({
-            scopes: AuthAdministrativeScopes,
+            scopes: flags.scope.length > 0 ? flags.scope : AuthAdministrativeScopes,
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
             ...(Option.isSome(flags.subject) ? { subject: flags.subject.value } : {}),

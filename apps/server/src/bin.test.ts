@@ -476,6 +476,35 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }),
   );
 
+  it.effect("issues a session with only the explicitly selected scopes", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-cli-auth-scoped-session-test-"),
+      );
+
+      const issuedOutput = yield* captureStdout(
+        runCli([
+          "auth",
+          "session",
+          "issue",
+          "--base-dir",
+          baseDir,
+          "--scope",
+          "orchestration:read",
+          "--scope",
+          "orchestration:operate",
+          "--json",
+        ]),
+      );
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const issued = JSON.parse(issuedOutput.output) as {
+        readonly scopes: ReadonlyArray<string>;
+      };
+
+      assert.deepEqual(issued.scopes, ["orchestration:read", "orchestration:operate"]);
+    }),
+  );
+
   it.effect("rejects invalid ttl values before running auth commands", () =>
     Effect.gen(function* () {
       const error = yield* runCliWithRuntime(["auth", "pairing", "create", "--ttl", "soon"]).pipe(
