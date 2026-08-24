@@ -1,7 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -379,5 +381,26 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       yield* sessions.recordClientConnection(issued.sessionId, {});
       expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.3.0" });
     }).pipe(Effect.provide(Layer.mergeAll(makeSessionStoreLayer(), SqlitePersistenceMemory))),
+  );
+  it.effect("observes session revocation written by another process", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const repository = yield* AuthSessions.AuthSessionRepository;
+      const issued = yield* sessions.issue({ subject: "external-revocation-test" });
+      const watcher = yield* sessions.awaitInvalidation(issued.sessionId).pipe(Effect.forkScoped);
+
+      yield* Effect.yieldNow;
+      yield* repository.revoke({
+        sessionId: issued.sessionId,
+        revokedAt: yield* DateTime.now,
+      });
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* Fiber.join(watcher);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(makeSessionStoreLayer(), SqlitePersistenceMemory, TestClock.layer()),
+      ),
+    ),
   );
 });

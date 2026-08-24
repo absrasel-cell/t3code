@@ -389,6 +389,12 @@ export class SessionStore extends Context.Service<
       SessionCredentialInternalError
     >;
     readonly streamChanges: Stream.Stream<SessionCredentialChange>;
+    /**
+     * Completes when the session is revoked or expires. The persistence poll
+     * is required because administrative CLI revocation runs in a separate
+     * process and cannot publish on this process's in-memory change stream.
+     */
+    readonly awaitInvalidation: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
     readonly revoke: (
       sessionId: AuthSessionId,
     ) => Effect.Effect<boolean, SessionCredentialInternalError>;
@@ -409,6 +415,7 @@ export class SessionStore extends Context.Service<
 
 const SIGNING_SECRET_NAME = "server-signing-key";
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
+const SESSION_VALIDITY_POLL_INTERVAL = Duration.seconds(1);
 
 const SessionClaims = Schema.Struct({
   v: Schema.Literal(1),
@@ -493,6 +500,45 @@ export const make = Effect.gen(function* () {
       type: "clientRemoved",
       sessionId,
     }).pipe(Effect.asVoid);
+
+  const storedSessionIsActive = (sessionId: AuthSessionId) =>
+    Effect.gen(function* () {
+      const row = yield* authSessions.getById({ sessionId });
+      if (Option.isNone(row) || row.value.revokedAt !== null) return false;
+      const now = yield* DateTime.now;
+      return row.value.expiresAt.epochMilliseconds > now.epochMilliseconds;
+    });
+
+  const awaitInvalidation: SessionStore["Service"]["awaitInvalidation"] = (sessionId) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const changes = yield* PubSub.subscribe(changesPubSub);
+        const localInvalidation = Effect.gen(function* () {
+          while (true) {
+            const change = yield* PubSub.take(changes);
+            if (change.type === "clientRemoved" && change.sessionId === sessionId) return;
+          }
+        });
+        const persistedInvalidation = Effect.gen(function* () {
+          while (yield* storedSessionIsActive(sessionId)) {
+            yield* Effect.sleep(SESSION_VALIDITY_POLL_INTERVAL);
+          }
+        });
+        yield* Effect.raceFirst(localInvalidation, persistedInvalidation);
+      }),
+    ).pipe(
+      Effect.catchTags({
+        PersistenceDecodeError: (cause) =>
+          Effect.logError("Failed to watch session validity; closing the client connection.").pipe(
+            Effect.annotateLogs({ sessionId, cause }),
+          ),
+        PersistenceSqlError: (cause) =>
+          Effect.logError("Failed to watch session validity; closing the client connection.").pipe(
+            Effect.annotateLogs({ sessionId, cause }),
+          ),
+      }),
+      Effect.withSpan("SessionStore.awaitInvalidation"),
+    );
 
   const loadActiveSession = (sessionId: AuthSessionId) =>
     Effect.gen(function* () {
@@ -942,6 +988,7 @@ export const make = Effect.gen(function* () {
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },
+    awaitInvalidation,
     revoke,
     revokeAllExcept,
     markConnected,

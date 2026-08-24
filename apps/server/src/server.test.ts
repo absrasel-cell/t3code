@@ -3966,6 +3966,24 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         pairingBody.credential,
       );
 
+      const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: {
+          cookie: pairedSessionCookie,
+        },
+      });
+      const ticketBody = (yield* ticketResponse.json) as { readonly ticket: string };
+      const socketUrl = new URL(yield* getWsServerUrl("/ws", { authenticated: false }));
+      socketUrl.searchParams.set("wsTicket", ticketBody.ticket);
+      const pairedSocket = yield* Effect.acquireRelease(
+        Effect.callback<NodeSocket.NodeWS.WebSocket, Error>((resume) => {
+          const socket = new NodeSocket.NodeWS.WebSocket(socketUrl);
+          socket.once("open", () => resume(Effect.succeed(socket)));
+          socket.once("error", (error) => resume(Effect.fail(error)));
+        }),
+        (socket) => Effect.sync(() => socket.close()),
+      );
+      const socketClosed = new Promise<void>((resolve) => pairedSocket.once("close", resolve));
+
       const clientsResponse = yield* HttpClient.get("/api/auth/clients", {
         headers: {
           cookie: ownerCookie,
@@ -3992,9 +4010,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         body: yield* HttpBody.json({}),
       });
 
+      yield* Effect.promise(() => socketClosed);
+
       assert.equal(revokeResponse.status, 200);
       assert.equal(pairedClientPairingResponse.status, 401);
-    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("allows reusing the desktop bootstrap credential", () =>

@@ -2505,7 +2505,11 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         );
         return yield* Effect.acquireUseRelease(
           sessions.markConnected(session.sessionId),
-          () => rpcWebSocketHttpEffect,
+          () =>
+            Effect.raceFirst(
+              rpcWebSocketHttpEffect,
+              sessions.awaitInvalidation(session.sessionId).pipe(Effect.andThen(Effect.interrupt)),
+            ),
           () => sessions.markDisconnected(session.sessionId),
         );
       }).pipe(
