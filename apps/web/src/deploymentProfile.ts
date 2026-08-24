@@ -25,6 +25,19 @@ export function deploymentUiCapabilitiesForProfile(
     };
   }
 
+  if (profile === "llp-full") {
+    return {
+      appBaseName: "r3xCode",
+      appStageLabel: null,
+      appearanceModeToggle: true,
+      currentTasks: true,
+      productShell: true,
+      projectAdministration: true,
+      rtxOrchestrator: true,
+      workspaceTools: true,
+    };
+  }
+
   return {
     appBaseName: "T3 Code",
     appStageLabel: null,

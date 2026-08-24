@@ -41,4 +41,17 @@ describe("LLP chat-only routes", () => {
     expect(deploymentUiCapabilitiesForProfile("llp-chat-only").appearanceModeToggle).toBe(true);
     expect(deploymentUiCapabilitiesForProfile(null).appearanceModeToggle).toBe(false);
   });
+
+  it("keeps r3xCode branding while enabling the complete LLP owner surface", () => {
+    expect(deploymentUiCapabilitiesForProfile("llp-full")).toEqual({
+      appBaseName: "r3xCode",
+      appStageLabel: null,
+      appearanceModeToggle: true,
+      currentTasks: true,
+      productShell: true,
+      projectAdministration: true,
+      rtxOrchestrator: true,
+      workspaceTools: true,
+    });
+  });
 });

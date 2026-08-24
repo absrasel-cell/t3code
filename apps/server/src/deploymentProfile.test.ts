@@ -11,6 +11,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+  LLP_FULL_DEPLOYMENT_PROFILE,
   applyDeploymentProfileToEnvironmentDescriptor,
   commandDenialReasonForDeploymentProfile,
   isHttpRequestAllowedByDeploymentProfile,
@@ -45,7 +46,31 @@ const createThread = (): Extract<OrchestrationCommand, { type: "thread.create" }
 describe("LLP chat-only deployment profile", () => {
   it("preserves the web build's branded icon set", () => {
     expect(shouldPreserveBundledWebIcons(LLP_CHAT_ONLY_DEPLOYMENT_PROFILE)).toBe(true);
+    expect(shouldPreserveBundledWebIcons(LLP_FULL_DEPLOYMENT_PROFILE)).toBe(true);
     expect(shouldPreserveBundledWebIcons(standardDeploymentProfile)).toBe(false);
+  });
+
+  it("keeps the branded full profile unrestricted", () => {
+    expect(
+      isRpcMethodAllowedByDeploymentProfile("terminal.open", LLP_FULL_DEPLOYMENT_PROFILE),
+    ).toBe(true);
+    expect(
+      isHttpRequestAllowedByDeploymentProfile(
+        "GET",
+        "/api/auth/pairing-links",
+        LLP_FULL_DEPLOYMENT_PROFILE,
+      ),
+    ).toBe(true);
+    expect(
+      commandDenialReasonForDeploymentProfile(
+        {
+          type: "project.delete",
+          commandId,
+          projectId,
+        },
+        LLP_FULL_DEPLOYMENT_PROFILE,
+      ),
+    ).toBeUndefined();
   });
 
   it("does not advertise hidden server capabilities", () => {

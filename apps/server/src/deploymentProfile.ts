@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 
 export const LLP_CHAT_ONLY_DEPLOYMENT_PROFILE = "llp-chat-only";
+export const LLP_FULL_DEPLOYMENT_PROFILE = "llp-full";
 
 export function isLlpChatOnlyDeploymentProfile(
   profile = process.env.T3CODE_DEPLOYMENT_PROFILE,
@@ -17,7 +18,7 @@ export function isLlpChatOnlyDeploymentProfile(
 export function shouldPreserveBundledWebIcons(
   profile = process.env.T3CODE_DEPLOYMENT_PROFILE,
 ): boolean {
-  return isLlpChatOnlyDeploymentProfile(profile);
+  return isLlpChatOnlyDeploymentProfile(profile) || profile === LLP_FULL_DEPLOYMENT_PROFILE;
 }
 
 export function applyDeploymentProfileToEnvironmentDescriptor(
