@@ -33,7 +33,7 @@ export function deploymentUiCapabilitiesForProfile(
       currentTasks: true,
       productShell: true,
       projectAdministration: true,
-      rtxOrchestrator: true,
+      rtxOrchestrator: false,
       workspaceTools: true,
     };
   }

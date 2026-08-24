@@ -273,7 +273,7 @@ import {
   useThreadShell,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
-import { LLP_CHAT_ONLY_UI } from "../deploymentProfile";
+import { DEPLOYMENT_UI_CAPABILITIES, LLP_CHAT_ONLY_UI } from "../deploymentProfile";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
@@ -7108,7 +7108,7 @@ function ChatViewContent(props: ChatViewProps) {
           pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
           agentsAvailable={!LLP_CHAT_ONLY_UI}
           currentTasksAvailable
-          rtxOrchestratorAvailable={!LLP_CHAT_ONLY_UI}
+          rtxOrchestratorAvailable={DEPLOYMENT_UI_CAPABILITIES.rtxOrchestrator}
           showUnavailableActions={!LLP_CHAT_ONLY_UI}
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={LLP_CHAT_ONLY_UI ? 0 : agentPanelModel.liveCount}
@@ -7153,7 +7153,7 @@ function ChatViewContent(props: ChatViewProps) {
             pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
             agentsAvailable={!LLP_CHAT_ONLY_UI}
             currentTasksAvailable
-            rtxOrchestratorAvailable={!LLP_CHAT_ONLY_UI}
+            rtxOrchestratorAvailable={DEPLOYMENT_UI_CAPABILITIES.rtxOrchestrator}
             showUnavailableActions={!LLP_CHAT_ONLY_UI}
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={LLP_CHAT_ONLY_UI ? 0 : agentPanelModel.liveCount}

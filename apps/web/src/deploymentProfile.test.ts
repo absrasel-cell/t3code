@@ -50,7 +50,7 @@ describe("LLP chat-only routes", () => {
       currentTasks: true,
       productShell: true,
       projectAdministration: true,
-      rtxOrchestrator: true,
+      rtxOrchestrator: false,
       workspaceTools: true,
     });
   });
