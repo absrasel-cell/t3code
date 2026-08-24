@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -10,7 +11,9 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 
 const makeServerConfigLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
+  overrides?: Partial<
+    Pick<ServerConfig.ServerConfig["Service"], "browserSessionTtl" | "desktopBootstrapToken">
+  >,
 ) =>
   Layer.effect(
     ServerConfig.ServerConfig,
@@ -30,7 +33,9 @@ const makeServerConfigLayer = (
   );
 
 const makeEnvironmentAuthLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
+  overrides?: Partial<
+    Pick<ServerConfig.ServerConfig["Service"], "browserSessionTtl" | "desktopBootstrapToken">
+  >,
 ) =>
   EnvironmentAuth.layer.pipe(
     Layer.provideMerge(ServerSecretStore.layer),
@@ -107,6 +112,36 @@ it.layer(NodeServices.layer)("EnvironmentAuth administrative operations", (it) =
       expect(revoked).toBe(true);
       expect(listedAfterRevoke).toHaveLength(0);
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
+  );
+
+  it.effect("exchanges least-privilege pairing links into 24-hour browser sessions", () =>
+    Effect.gen(function* () {
+      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessionCredentials = yield* SessionStore.SessionStore;
+      const pairing = yield* environmentAuth.createPairingLink({
+        label: "LLP browser",
+        scopes: ["orchestration:read", "orchestration:operate"],
+      });
+
+      const browser = yield* environmentAuth.createBrowserSession(pairing.credential, {
+        deviceType: "mobile",
+      });
+      const verified = yield* sessionCredentials.verify(browser.sessionToken);
+      const sessions = yield* environmentAuth.listSessions();
+      const listed = sessions.find((session) => session.sessionId === verified.sessionId);
+
+      expect(browser.response.scopes).toEqual(["orchestration:read", "orchestration:operate"]);
+      expect(verified.scopes).toEqual(["orchestration:read", "orchestration:operate"]);
+      expect(
+        (listed?.expiresAt.epochMilliseconds ?? 0) - (listed?.issuedAt.epochMilliseconds ?? 0),
+      ).toBe(Duration.toMillis(Duration.hours(24)));
+    }).pipe(
+      Effect.provide(
+        makeEnvironmentAuthLayer({
+          browserSessionTtl: Duration.hours(24),
+        }),
+      ),
+    ),
   );
 
   it.effect("surfaces lastConnectedAt through the listed session view", () =>

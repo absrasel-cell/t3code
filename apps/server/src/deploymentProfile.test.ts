@@ -81,12 +81,16 @@ describe("LLP chat-only deployment profile", () => {
   });
 
   it("denies privileged RPC surfaces independently of token scopes", () => {
-    expect(
-      isRpcMethodAllowedByDeploymentProfile("terminal.open", LLP_CHAT_ONLY_DEPLOYMENT_PROFILE),
-    ).toBe(false);
-    expect(
-      isRpcMethodAllowedByDeploymentProfile("vcs.pull", LLP_CHAT_ONLY_DEPLOYMENT_PROFILE),
-    ).toBe(false);
+    for (const method of [
+      "terminal.open",
+      "review.getDiffPreview",
+      "vcs.pull",
+      "git.runStackedAction",
+    ]) {
+      expect(isRpcMethodAllowedByDeploymentProfile(method, LLP_CHAT_ONLY_DEPLOYMENT_PROFILE)).toBe(
+        false,
+      );
+    }
     expect(
       isRpcMethodAllowedByDeploymentProfile(
         "orchestration.dispatchCommand",
@@ -117,6 +121,13 @@ describe("LLP chat-only deployment profile", () => {
       isHttpRequestAllowedByDeploymentProfile(
         "POST",
         "/api/connect/relay-config",
+        LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+      ),
+    ).toBe(false);
+    expect(
+      isHttpRequestAllowedByDeploymentProfile(
+        "GET",
+        "/api/auth/pairing-links",
         LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
       ),
     ).toBe(false);

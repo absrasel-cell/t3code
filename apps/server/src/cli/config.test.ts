@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 
 import { assert, expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -24,6 +25,31 @@ const deriveExplicitServerPaths = (baseDir: string, devUrl: URL | undefined) =>
   deriveServerPaths(baseDir, devUrl, { baseDirIsExplicit: true });
 
 const encodeDesktopBootstrap = Schema.encodeEffect(Schema.fromJsonString(DesktopBackendBootstrap));
+
+const resolveConfigWithEnv = (env: Readonly<Record<string, string>>) => {
+  const baseDir = NodeFS.mkdtempSync(NodeOS.tmpdir() + "/t3-cli-session-ttl-test-");
+  return resolveServerConfig(
+    {
+      mode: Option.some("web"),
+      port: Option.some(3773),
+      host: Option.some("127.0.0.1"),
+      baseDir: Option.some(baseDir),
+      cwd: Option.none(),
+      devUrl: Option.none(),
+      noBrowser: Option.some(true),
+      bootstrapFd: Option.none(),
+      autoBootstrapProjectFromCwd: Option.some(false),
+      logWebSocketEvents: Option.some(false),
+      tailscaleServeEnabled: Option.some(false),
+      tailscaleServePort: Option.some(443),
+    },
+    Option.none(),
+  ).pipe(
+    Effect.provide(
+      Layer.mergeAll(ConfigProvider.layer(ConfigProvider.fromEnv({ env })), NetService.layer),
+    ),
+  );
+};
 
 const makeDesktopBootstrap = (
   overrides: Partial<DesktopBackendBootstrapValue> = {},
@@ -127,6 +153,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devAllowedOrigins: ["https://host.example.ts.net", "https://phone.example.ts.net"],
         noBrowser: true,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: true,
@@ -134,6 +161,39 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         tailscaleServePort: 443,
       });
       assert.equal(resolved.stateDir, join(baseDir, "userdata"));
+    }),
+  );
+
+  it.effect("defaults LLP browser sessions to 24 hours without changing the standard default", () =>
+    Effect.gen(function* () {
+      const llp = yield* resolveConfigWithEnv({
+        T3CODE_DEPLOYMENT_PROFILE: "llp-chat-only",
+      });
+      const standard = yield* resolveConfigWithEnv({});
+      const explicit = yield* resolveConfigWithEnv({
+        T3CODE_DEPLOYMENT_PROFILE: "llp-chat-only",
+        T3CODE_BROWSER_SESSION_TTL: "12 hours",
+      });
+
+      expect(Duration.toMillis(llp.browserSessionTtl)).toBe(Duration.toMillis(Duration.hours(24)));
+      expect(Duration.toMillis(standard.browserSessionTtl)).toBe(
+        Duration.toMillis(Duration.days(30)),
+      );
+      expect(Duration.toMillis(explicit.browserSessionTtl)).toBe(
+        Duration.toMillis(Duration.hours(12)),
+      );
+    }),
+  );
+
+  it.effect("rejects non-positive and unbounded browser session TTLs", () =>
+    Effect.gen(function* () {
+      for (const value of ["0 seconds", "-1 seconds", "Infinity"]) {
+        const error = yield* resolveConfigWithEnv({
+          T3CODE_BROWSER_SESSION_TTL: value,
+        }).pipe(Effect.flip);
+
+        expect(String(error)).toContain("Browser session TTL must be positive and finite");
+      }
     }),
   );
 
@@ -197,6 +257,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: new URL("http://127.0.0.1:4173"),
         noBrowser: true,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
@@ -270,6 +331,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: new URL("http://127.0.0.1:4173"),
         noBrowser: false,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: "desktop-bootstrap-token",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
@@ -346,6 +408,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: undefined,
         noBrowser: true,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: "desktop-token",
         desktopTelemetryFd: 4,
         desktopTelemetryControlFd: 5,
@@ -479,6 +542,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: new URL("http://127.0.0.1:4173"),
         noBrowser: true,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: "desktop-token",
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
@@ -548,6 +612,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: undefined,
         noBrowser: true,
         startupPresentation: "browser",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
@@ -611,6 +676,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: undefined,
         noBrowser: true,
         startupPresentation: "headless",
+        browserSessionTtl: Duration.days(30),
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,

@@ -7,6 +7,7 @@
  * @module ServerConfig
  */
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -15,6 +16,13 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 export const DEFAULT_PORT = 3773;
+export const DEFAULT_BROWSER_SESSION_TTL = Duration.days(30);
+export const LLP_CHAT_ONLY_BROWSER_SESSION_TTL = Duration.hours(24);
+
+export const defaultBrowserSessionTtl = (deploymentProfile?: string): Duration.Duration =>
+  deploymentProfile === "llp-chat-only"
+    ? LLP_CHAT_ONLY_BROWSER_SESSION_TTL
+    : DEFAULT_BROWSER_SESSION_TTL;
 
 export const RuntimeMode = Schema.Literals(["web", "desktop"]);
 export type RuntimeMode = typeof RuntimeMode.Type;
@@ -75,6 +83,7 @@ export class ServerConfig extends Context.Service<
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
     readonly startupPresentation: StartupPresentation;
+    readonly browserSessionTtl: Duration.Duration;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopTelemetryFd?: number | undefined;
     readonly desktopTelemetryControlFd?: number | undefined;
@@ -197,6 +206,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     devAllowedOrigins: [],
     noBrowser: false,
     startupPresentation: "browser",
+    browserSessionTtl: DEFAULT_BROWSER_SESSION_TTL,
   });
 });
 

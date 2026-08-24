@@ -455,6 +455,7 @@ const buildAppUnderTest = (options?: {
       devAllowedOrigins: [],
       noBrowser: true,
       startupPresentation: "browser",
+      browserSessionTtl: ServerConfig.DEFAULT_BROWSER_SESSION_TTL,
       desktopBootstrapToken: defaultDesktopBootstrapToken,
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,

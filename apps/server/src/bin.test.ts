@@ -87,6 +87,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       devAllowedOrigins: [],
       noBrowser: true,
       startupPresentation: "browser",
+      browserSessionTtl: ServerConfig.DEFAULT_BROWSER_SESSION_TTL,
       desktopBootstrapToken: undefined,
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
@@ -339,6 +340,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const created = JSON.parse(createdOutput.output) as {
         readonly id: string;
         readonly credential: string;
+        readonly scopes: ReadonlyArray<string>;
       };
       const listedOutput = yield* captureStdout(
         runCli(["auth", "pairing", "list", "--base-dir", baseDir, "--json"]),
@@ -347,14 +349,77 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const listed = JSON.parse(listedOutput.output) as ReadonlyArray<{
         readonly id: string;
         readonly credential?: string;
+        readonly scopes: ReadonlyArray<string>;
       }>;
 
       assert.equal(typeof created.id, "string");
       assert.equal(typeof created.credential, "string");
       assert.equal(created.credential.length > 0, true);
+      assert.deepEqual(created.scopes, [
+        "orchestration:read",
+        "orchestration:operate",
+        "terminal:operate",
+        "review:write",
+        "relay:read",
+      ]);
       assert.equal(listed.length, 1);
       assert.equal(listed[0]?.id, created.id);
+      assert.deepEqual(listed[0]?.scopes, created.scopes);
       assert.equal("credential" in (listed[0] ?? {}), false);
+    }),
+  );
+
+  it.effect("creates pairing links with an exact least-privilege scope set", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-cli-auth-pairing-scopes-test-"),
+      );
+
+      const createdOutput = yield* captureStdout(
+        runCli([
+          "auth",
+          "pairing",
+          "create",
+          "--base-dir",
+          baseDir,
+          "--scope",
+          "orchestration:read",
+          "--scope",
+          "orchestration:operate",
+          "--json",
+        ]),
+      );
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const created = JSON.parse(createdOutput.output) as {
+        readonly scopes: ReadonlyArray<string>;
+      };
+
+      assert.deepEqual(created.scopes, ["orchestration:read", "orchestration:operate"]);
+    }),
+  );
+
+  it.effect("rejects empty, unknown, and duplicate pairing scopes", () =>
+    Effect.gen(function* () {
+      for (const scopes of [
+        [""],
+        ["project:write"],
+        ["orchestration:read", "orchestration:read"],
+      ]) {
+        const args = ["auth", "pairing", "create"];
+        for (const scope of scopes) {
+          args.push("--scope", scope);
+        }
+
+        const error = yield* runCliWithRuntime(args).pipe(Effect.flip);
+
+        if (!CliError.isCliError(error)) {
+          assert.fail(`Expected CliError, got ${String(error)}`);
+        }
+        if (error._tag !== "ShowHelp") {
+          assert.fail(`Expected ShowHelp, got ${error._tag}`);
+        }
+        assert.deepEqual(error.commandPath, ["t3", "auth", "pairing", "create"]);
+      }
     }),
   );
 

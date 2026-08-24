@@ -408,7 +408,6 @@ export class SessionStore extends Context.Service<
 >()("t3/auth/SessionStore") {}
 
 const SIGNING_SECRET_NAME = "server-signing-key";
-const DEFAULT_SESSION_TTL = Duration.days(30);
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
 
 const SessionClaims = Schema.Struct({
@@ -609,8 +608,13 @@ export const make = Effect.gen(function* () {
         ),
       );
       const issuedAt = yield* DateTime.now;
+      const method = input?.method ?? "browser-session-cookie";
+      const defaultTtl =
+        method === "browser-session-cookie"
+          ? serverConfig.browserSessionTtl
+          : ServerConfig.DEFAULT_BROWSER_SESSION_TTL;
       const expiresAt = DateTime.add(issuedAt, {
-        milliseconds: Duration.toMillis(input?.ttl ?? DEFAULT_SESSION_TTL),
+        milliseconds: Duration.toMillis(input?.ttl ?? defaultTtl),
       });
       const claims: SessionClaims = {
         v: 1,
@@ -618,7 +622,7 @@ export const make = Effect.gen(function* () {
         sid: sessionId,
         sub: input?.subject ?? "browser",
         scopes: input?.scopes ?? AuthStandardClientScopes,
-        method: input?.method ?? "browser-session-cookie",
+        method,
         ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
         iat: issuedAt.epochMilliseconds,
         exp: expiresAt.epochMilliseconds,

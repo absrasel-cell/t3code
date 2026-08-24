@@ -75,6 +75,14 @@ export const tailscaleServePortFlag = Flag.integer("tailscale-serve-port").pipe(
   Flag.optional,
 );
 
+const BrowserSessionTtlFromString = Schema.DurationFromString.check(
+  Schema.makeFilter(
+    (ttl) =>
+      (Duration.isFinite(ttl) && Duration.isPositive(ttl)) ||
+      "Browser session TTL must be positive and finite.",
+  ),
+);
+
 const EnvServerConfig = Config.all({
   logLevel: Config.logLevel("T3CODE_LOG_LEVEL").pipe(Config.withDefault("Info")),
   traceMinLevel: Config.logLevel("T3CODE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Info")),
@@ -136,6 +144,14 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   tailscaleServePort: Config.port("T3CODE_TAILSCALE_SERVE_PORT").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  deploymentProfile: Config.string("T3CODE_DEPLOYMENT_PROFILE").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  browserSessionTtl: Config.schema(BrowserSessionTtlFromString, "T3CODE_BROWSER_SESSION_TTL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
@@ -378,6 +394,8 @@ export const resolveServerConfig = (
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       startupPresentation,
+      browserSessionTtl:
+        env.browserSessionTtl ?? ServerConfig.defaultBrowserSessionTtl(env.deploymentProfile),
       desktopBootstrapToken,
       desktopTelemetryFd,
       desktopTelemetryControlFd,

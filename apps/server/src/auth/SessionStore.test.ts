@@ -14,7 +14,9 @@ import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
 const makeServerConfigLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
+  overrides?: Partial<
+    Pick<ServerConfig.ServerConfig["Service"], "browserSessionTtl" | "desktopBootstrapToken">
+  >,
 ) =>
   Layer.effect(
     ServerConfig.ServerConfig,
@@ -28,7 +30,9 @@ const makeServerConfigLayer = (
   ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-session-test-" })));
 
 const makeSessionStoreLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
+  overrides?: Partial<
+    Pick<ServerConfig.ServerConfig["Service"], "browserSessionTtl" | "desktopBootstrapToken">
+  >,
 ) =>
   SessionStore.layer.pipe(
     Layer.provide(SqlitePersistenceMemory),
@@ -85,6 +89,34 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(verified.client.browser).toBe("Electron");
       expect(verified.expiresAt?.toString()).toBe(issued.expiresAt.toString());
     }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+  it.effect("uses the configured TTL only for browser sessions", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const browser = yield* sessions.issue({ subject: "browser" });
+      const bearer = yield* sessions.issue({
+        method: "bearer-access-token",
+        subject: "bearer",
+      });
+      const active = yield* sessions.listActive();
+      const browserRecord = active.find((session) => session.sessionId === browser.sessionId);
+      const bearerRecord = active.find((session) => session.sessionId === bearer.sessionId);
+
+      expect(
+        (browserRecord?.expiresAt.epochMilliseconds ?? 0) -
+          (browserRecord?.issuedAt.epochMilliseconds ?? 0),
+      ).toBe(Duration.toMillis(Duration.hours(24)));
+      expect(
+        (bearerRecord?.expiresAt.epochMilliseconds ?? 0) -
+          (bearerRecord?.issuedAt.epochMilliseconds ?? 0),
+      ).toBe(Duration.toMillis(Duration.days(30)));
+    }).pipe(
+      Effect.provide(
+        makeSessionStoreLayer({
+          browserSessionTtl: Duration.hours(24),
+        }),
+      ),
+    ),
   );
   it.effect("rejects malformed session tokens", () =>
     Effect.gen(function* () {

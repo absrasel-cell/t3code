@@ -1,5 +1,6 @@
 import {
   AuthAdministrativeScopes,
+  AuthEnvironmentScope,
   AuthSessionId,
   AuthStandardClientScopes,
 } from "@t3tools/contracts";
@@ -81,11 +82,28 @@ const tokenOnlyFlag = Flag.boolean("token-only").pipe(
   Flag.withDefault(false),
 );
 
+const scopeFlag = Flag.choice("scope", AuthEnvironmentScope.literals).pipe(
+  Flag.atMost(AuthEnvironmentScope.literals.length),
+  Flag.mapTryCatch(
+    (scopes) => {
+      if (new Set(scopes).size !== scopes.length) {
+        throw new Error("duplicate scope");
+      }
+      return scopes;
+    },
+    () => "Each --scope value must be unique.",
+  ),
+  Flag.withDescription(
+    "Grant this scope. Repeat for multiple scopes; omitting it preserves standard client scopes.",
+  ),
+);
+
 const pairingCreateCommand = Command.make("create", {
   ...authLocationFlags,
   ttl: ttlFlag,
   label: labelFlag,
   baseUrl: baseUrlFlag,
+  scope: scopeFlag,
   json: jsonFlag,
 }).pipe(
   Command.withDescription("Issue a new client pairing token."),
@@ -95,7 +113,7 @@ const pairingCreateCommand = Command.make("create", {
       (environmentAuth) =>
         Effect.gen(function* () {
           const issued = yield* environmentAuth.createPairingLink({
-            scopes: AuthStandardClientScopes,
+            scopes: flags.scope.length > 0 ? flags.scope : AuthStandardClientScopes,
             subject: "one-time-token",
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),

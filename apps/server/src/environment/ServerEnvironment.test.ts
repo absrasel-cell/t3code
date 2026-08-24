@@ -67,6 +67,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     devAllowedOrigins: [],
     noBrowser: false,
     startupPresentation: "browser",
+    browserSessionTtl: ServerConfig.DEFAULT_BROWSER_SESSION_TTL,
   } satisfies ServerConfig.ServerConfig["Service"];
 });
 
