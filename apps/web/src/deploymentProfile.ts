@@ -1,6 +1,7 @@
 export type DeploymentUiCapabilities = {
   readonly appBaseName: string;
   readonly appStageLabel: string | null;
+  readonly appearanceModeToggle: boolean;
   readonly currentTasks: boolean;
   readonly productShell: boolean;
   readonly projectAdministration: boolean;
@@ -15,6 +16,7 @@ export function deploymentUiCapabilitiesForProfile(
     return {
       appBaseName: "r3xCode",
       appStageLabel: null,
+      appearanceModeToggle: true,
       currentTasks: true,
       productShell: true,
       projectAdministration: false,
@@ -26,6 +28,7 @@ export function deploymentUiCapabilitiesForProfile(
   return {
     appBaseName: "T3 Code",
     appStageLabel: null,
+    appearanceModeToggle: false,
     currentTasks: true,
     productShell: true,
     projectAdministration: true,

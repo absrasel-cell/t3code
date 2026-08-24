@@ -28,11 +28,17 @@ describe("LLP chat-only routes", () => {
     expect(deploymentUiCapabilitiesForProfile("llp-chat-only")).toEqual({
       appBaseName: "r3xCode",
       appStageLabel: null,
+      appearanceModeToggle: true,
       currentTasks: true,
       productShell: true,
       projectAdministration: false,
       rtxOrchestrator: false,
       workspaceTools: false,
     });
+  });
+
+  it("keeps a safe appearance control when settings routes are unavailable", () => {
+    expect(deploymentUiCapabilitiesForProfile("llp-chat-only").appearanceModeToggle).toBe(true);
+    expect(deploymentUiCapabilitiesForProfile(null).appearanceModeToggle).toBe(false);
   });
 });

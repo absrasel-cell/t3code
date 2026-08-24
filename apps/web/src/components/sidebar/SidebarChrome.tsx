@@ -2,13 +2,16 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
+  MoonIcon,
   SettingsIcon,
+  SunIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useTheme } from "../../hooks/useTheme";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import {
@@ -29,9 +32,10 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { toastManager } from "../ui/toast";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
-import { LLP_CHAT_ONLY_UI } from "../../deploymentProfile";
+import { DEPLOYMENT_UI_CAPABILITIES } from "../../deploymentProfile";
 import { APP_BASE_NAME } from "../../branding";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -150,6 +154,42 @@ function SidebarUtilityItem({
   );
 }
 
+export function nextAppearanceMode(resolvedTheme: "light" | "dark"): "light" | "dark" {
+  return resolvedTheme === "dark" ? "light" : "dark";
+}
+
+function SidebarAppearanceModeToggle() {
+  const { resolvedTheme, setAppearanceMode } = useTheme();
+  const nextMode = nextAppearanceMode(resolvedTheme);
+  const label = `Switch to ${nextMode} mode`;
+  const handleClick = useCallback(() => {
+    if (setAppearanceMode(nextMode)) return;
+    toastManager.add({
+      type: "error",
+      title: "Couldn’t save appearance mode",
+      description: "Try again.",
+    });
+  }, [nextMode, setAppearanceMode]);
+
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <SidebarMenuButton aria-label={label} onClick={handleClick}>
+                {nextMode === "dark" ? <MoonIcon /> : <SunIcon />}
+                <span>{label}</span>
+              </SidebarMenuButton>
+            }
+          />
+          <TooltipPopup side="top">{label}</TooltipPopup>
+        </Tooltip>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
+
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -236,7 +276,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 });
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
-  if (LLP_CHAT_ONLY_UI) return null;
+  if (DEPLOYMENT_UI_CAPABILITIES.appearanceModeToggle) {
+    return (
+      <SidebarFooter className="p-[var(--sidebar-content-inset)]">
+        <SidebarAppearanceModeToggle />
+      </SidebarFooter>
+    );
+  }
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
