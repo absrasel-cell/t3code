@@ -7,11 +7,11 @@ import { RtxCurrentTasksPanel } from "./RtxCurrentTasksPanel";
 
 const threadRef = scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
 
-describe("RtxCurrentTasksPanel local thread mode", () => {
+describe("RtxCurrentTasksPanel thread plan mode", () => {
   it("renders the active thread plan without the RedClaw bridge", () => {
     const markup = renderToStaticMarkup(
       <RtxCurrentTasksPanel
-        localOnly
+        source="thread"
         threadRef={threadRef}
         progress={{ step: "Restore the product UI", completedSteps: 1, totalSteps: 3 }}
         steps={[
@@ -23,7 +23,7 @@ describe("RtxCurrentTasksPanel local thread mode", () => {
     );
 
     expect(markup).toContain('data-thread-todo="true"');
-    expect(markup).toContain("Thread TODO");
+    expect(markup).toContain("Agent plan");
     expect(markup).toContain("Status · 1/3");
     expect(markup).toContain("Restore the product UI");
     expect(markup).toContain("up next");
@@ -31,9 +31,11 @@ describe("RtxCurrentTasksPanel local thread mode", () => {
   });
 
   it("explains where TODOs appear before a plan exists", () => {
-    const markup = renderToStaticMarkup(<RtxCurrentTasksPanel localOnly threadRef={threadRef} />);
+    const markup = renderToStaticMarkup(
+      <RtxCurrentTasksPanel source="thread" threadRef={threadRef} />,
+    );
 
-    expect(markup).toContain("No thread TODOs yet");
-    expect(markup).toContain("development agent publishes a plan");
+    expect(markup).toContain("No agent plan yet");
+    expect(markup).toContain("this thread&#x27;s agent publishes a plan");
   });
 });

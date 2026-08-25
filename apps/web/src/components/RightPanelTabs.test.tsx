@@ -34,10 +34,6 @@ const secondSurface = {
   kind: "preview" as const,
   resourceId: "tab-2",
 };
-const currentTasksSurface = {
-  id: "current-tasks" as const,
-  kind: "current-tasks" as const,
-};
 const sessions: Readonly<Record<string, PreviewSessionSnapshot>> = {
   "tab-1": {
     threadId: "thread-1",
@@ -92,14 +88,8 @@ function renderTabs(
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
-      surfaces={
-        restricted
-          ? [currentTasksSurface]
-          : second
-            ? [previewSurface, secondSurface]
-            : [previewSurface]
-      }
-      activeSurfaceId={restricted ? currentTasksSurface.id : previewSurface.id}
+      surfaces={restricted ? [] : second ? [previewSurface, secondSurface] : [previewSurface]}
+      activeSurfaceId={restricted ? null : previewSurface.id}
       pendingSurfaceIds={new Set()}
       previewSessions={sessions}
       desktopByTabId={{
@@ -130,6 +120,7 @@ function renderTabs(
       pullRequestAvailable={false}
       agentsAvailable={false}
       currentTasksAvailable
+      currentTasksSource={restricted ? "thread" : "rtx"}
       rtxOrchestratorAvailable={!restricted}
       showUnavailableActions={!restricted}
     >
@@ -143,6 +134,8 @@ describe("RightPanelTabs reduced product profile", () => {
     const html = renderTabs(null, undefined, undefined, undefined, true);
 
     expect(html).toContain("Current Tasks");
+    expect(html).toContain("Track this agent&#x27;s plan and progress.");
+    expect(html).not.toContain("Track RTX jobs");
     expect(html).not.toContain(">Browser<");
     expect(html).not.toContain(">Terminal<");
     expect(html).not.toContain(">Files<");

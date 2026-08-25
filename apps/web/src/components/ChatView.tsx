@@ -6614,7 +6614,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "current-tasks" ? (
       <RtxCurrentTasksPanel
         key={activeThreadKey}
-        localOnly={LLP_CHAT_ONLY_UI}
+        source={DEPLOYMENT_UI_CAPABILITIES.currentTasksSource}
         progress={activeComposerTasksProgress}
         steps={activePlan?.steps ?? []}
         threadRef={activeThreadRef}
@@ -7108,6 +7108,7 @@ function ChatViewContent(props: ChatViewProps) {
           pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
           agentsAvailable={!LLP_CHAT_ONLY_UI}
           currentTasksAvailable
+          currentTasksSource={DEPLOYMENT_UI_CAPABILITIES.currentTasksSource}
           rtxOrchestratorAvailable={DEPLOYMENT_UI_CAPABILITIES.rtxOrchestrator}
           showUnavailableActions={!LLP_CHAT_ONLY_UI}
           pullRequestStatuses={pullRequestTabStatuses}
@@ -7153,6 +7154,7 @@ function ChatViewContent(props: ChatViewProps) {
             pullRequestAvailable={!LLP_CHAT_ONLY_UI && pullRequestSurfaceAvailable}
             agentsAvailable={!LLP_CHAT_ONLY_UI}
             currentTasksAvailable
+            currentTasksSource={DEPLOYMENT_UI_CAPABILITIES.currentTasksSource}
             rtxOrchestratorAvailable={DEPLOYMENT_UI_CAPABILITIES.rtxOrchestrator}
             showUnavailableActions={!LLP_CHAT_ONLY_UI}
             pullRequestStatuses={pullRequestTabStatuses}

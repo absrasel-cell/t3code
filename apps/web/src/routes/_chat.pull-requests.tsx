@@ -1596,6 +1596,7 @@ function PullRequestsRouteView() {
             pullRequestAvailable={false}
             agentsAvailable={false}
             currentTasksAvailable={false}
+            currentTasksSource="rtx"
             rtxOrchestratorAvailable={false}
             liveAgentCount={0}
             pullRequestStatuses={pullRequestTabStatuses}

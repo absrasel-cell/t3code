@@ -30,6 +30,7 @@ describe("LLP chat-only routes", () => {
       appStageLabel: null,
       appearanceModeToggle: true,
       currentTasks: true,
+      currentTasksSource: "thread",
       productShell: true,
       projectAdministration: false,
       rtxOrchestrator: false,
@@ -48,10 +49,17 @@ describe("LLP chat-only routes", () => {
       appStageLabel: null,
       appearanceModeToggle: true,
       currentTasks: true,
+      currentTasksSource: "thread",
       productShell: true,
       projectAdministration: true,
       rtxOrchestrator: false,
       workspaceTools: true,
     });
+  });
+
+  it("uses the VM-native thread plan instead of the host-only RTX bridge", () => {
+    expect(deploymentUiCapabilitiesForProfile("llp-chat-only").currentTasksSource).toBe("thread");
+    expect(deploymentUiCapabilitiesForProfile("llp-full").currentTasksSource).toBe("thread");
+    expect(deploymentUiCapabilitiesForProfile(null).currentTasksSource).toBe("rtx");
   });
 });

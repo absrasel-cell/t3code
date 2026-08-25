@@ -126,7 +126,7 @@ function ThreadTodoChecklist({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-border/60 border-y py-2 text-[10px] text-muted-foreground uppercase tracking-wide">
         <span className="flex items-center gap-1.5">
           <ListTodo aria-hidden className="size-3.5" />
-          Thread TODO
+          Agent plan
         </span>
         <span className="tabular-nums">
           Status · {completed}/{steps.length}
@@ -198,13 +198,13 @@ function ThreadTodoChecklist({
 }
 
 export function RtxCurrentTasksPanel({
-  localOnly = false,
   progress = null,
+  source = "rtx",
   steps = EMPTY_THREAD_TODO_STEPS,
   threadRef,
 }: {
-  readonly localOnly?: boolean;
   readonly progress?: ComposerTasksProgress | null;
+  readonly source?: "rtx" | "thread";
   readonly steps?: readonly ComposerTaskStep[];
   readonly threadRef: ScopedThreadRef;
 }) {
@@ -212,7 +212,7 @@ export function RtxCurrentTasksPanel({
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    if (localOnly) return;
+    if (source === "thread") return;
     try {
       const next = await readRtxThreadTask(threadRef.environmentId, threadRef.threadId);
       setState(next);
@@ -220,32 +220,32 @@ export function RtxCurrentTasksPanel({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not read RedClaw task state.");
     }
-  }, [localOnly, threadRef.environmentId, threadRef.threadId]);
+  }, [source, threadRef.environmentId, threadRef.threadId]);
 
   useEffect(() => {
-    if (localOnly) return;
+    if (source === "thread") return;
     void refresh();
     const interval = window.setInterval(() => void refresh(), 5_000);
     return () => window.clearInterval(interval);
-  }, [localOnly, refresh]);
+  }, [source, refresh]);
 
   const linkedTask = state?.task ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background" data-rtx-current-tasks>
-      {!localOnly && error ? (
+      {source === "rtx" && error ? (
         <p className="border-b border-border/70 px-3 py-2 text-destructive text-xs">{error}</p>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {localOnly && steps.length > 0 ? (
+        {source === "thread" && steps.length > 0 ? (
           <ThreadTodoChecklist progress={progress} steps={steps} />
-        ) : localOnly ? (
+        ) : source === "thread" ? (
           <div className="flex min-h-48 flex-col items-center justify-center text-center">
             <Circle className="size-7 text-muted-foreground/35" />
-            <p className="mt-3 font-medium text-sm">No thread TODOs yet</p>
+            <p className="mt-3 font-medium text-sm">No agent plan yet</p>
             <p className="mt-1 max-w-64 text-muted-foreground text-xs">
-              Tasks appear here when the development agent publishes a plan for this thread.
+              Tasks appear here when this thread's agent publishes a plan.
             </p>
           </div>
         ) : state === null && !error ? null : linkedTask === null ? (
