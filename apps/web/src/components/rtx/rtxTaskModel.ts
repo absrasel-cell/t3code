@@ -7,13 +7,15 @@ export interface RslChecklistItem {
   readonly status: RslChecklistItemStatus;
 }
 
-export interface RslDelegatedTask {
+export type ThreadLinkedTaskSource = "RSL Ai → RTX" | "Luma → T3";
+
+export interface ThreadLinkedTask {
   readonly id: string;
   readonly objectiveId: string;
   readonly title: string;
   readonly status: RtxTaskStatus;
   readonly statusLabel: string;
-  readonly source: "RSL Ai → RTX";
+  readonly source: ThreadLinkedTaskSource;
   readonly projectId: string;
   readonly origin: string;
   readonly updatedAt: string;
@@ -21,6 +23,10 @@ export interface RslDelegatedTask {
   readonly threadId: string;
   readonly environmentId: string;
   readonly checklist: ReadonlyArray<RslChecklistItem>;
+}
+
+export interface RslDelegatedTask extends ThreadLinkedTask {
+  readonly source: "RSL Ai → RTX";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -40,22 +46,28 @@ function isRslChecklistItem(value: unknown): value is RslChecklistItem {
   );
 }
 
-export function isRslDelegatedTask(value: unknown): value is RslDelegatedTask {
+export function isThreadLinkedTask(value: unknown): value is ThreadLinkedTask {
   if (!value || typeof value !== "object") return false;
-  const task = value as Partial<RslDelegatedTask>;
+  const task = value as Partial<ThreadLinkedTask>;
   return (
     typeof task.id === "string" &&
     UUID.test(task.id) &&
-    task.source === "RSL Ai → RTX" &&
+    (task.source === "RSL Ai → RTX" || task.source === "Luma → T3") &&
     typeof task.projectId === "string" &&
     task.projectId.length > 0 &&
     typeof task.title === "string" &&
     task.title.length > 0 &&
+    typeof task.origin === "string" &&
+    /^[a-z][a-z0-9-]{1,23}$/.test(task.origin) &&
     typeof task.status === "string" &&
     STATUSES.has(task.status as RtxTaskStatus) &&
     Array.isArray(task.checklist) &&
     task.checklist.every(isRslChecklistItem)
   );
+}
+
+export function isRslDelegatedTask(value: unknown): value is RslDelegatedTask {
+  return isThreadLinkedTask(value) && value.source === "RSL Ai → RTX";
 }
 
 export function selectRslDelegatedTasks(values: ReadonlyArray<unknown>): RslDelegatedTask[] {

@@ -98,6 +98,7 @@ export function isHttpRequestAllowedByDeploymentProfile(
   if (normalizedMethod === "GET" && path === "/api/orchestration/snapshot") return true;
   if (normalizedMethod === "GET" && path === "/api/orchestration/shell") return true;
   if (normalizedMethod === "GET" && path.startsWith("/api/orchestration/threads/")) return true;
+  if (normalizedMethod === "GET" && path === "/api/rtx/thread-task") return true;
   if (normalizedMethod === "POST" && path === "/api/orchestration/dispatch") return true;
   if (normalizedMethod === "GET" && path.startsWith("/api/assets/")) return true;
 

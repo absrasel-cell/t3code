@@ -1,4 +1,4 @@
-import type { RslDelegatedTask } from "./rtxTaskModel";
+import type { RslDelegatedTask, ThreadLinkedTask } from "./rtxTaskModel";
 
 export type RtxAutomaticMode = "auto" | "on" | "off";
 
@@ -38,7 +38,7 @@ export interface RtxOrchestratorState {
 }
 
 export interface RtxThreadTaskState {
-  readonly task: RslDelegatedTask | null;
+  readonly task: ThreadLinkedTask | null;
   readonly projectName: string;
   readonly checkedAt: string;
 }

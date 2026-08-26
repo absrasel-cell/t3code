@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import type { ComposerTaskStep, ComposerTasksProgress } from "~/components/chat/ComposerTasksBadge";
+import { ThreadOriginTitle } from "~/components/threadOrigin";
 
 import { readRtxThreadTask, type RtxThreadTaskState } from "./rtxApi";
-import { type RslChecklistItem } from "./rtxTaskModel";
+import { type RslChecklistItem, type ThreadLinkedTask } from "./rtxTaskModel";
 
 const EMPTY_THREAD_TODO_STEPS: readonly ComposerTaskStep[] = [];
 
@@ -47,7 +48,7 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
       </div>
       {items.length === 0 ? (
         <p className="py-3 text-[11px] text-muted-foreground/70">
-          No RSL/RTX checklist was recorded for this older delegation.
+          No controller checklist was recorded for this older task.
         </p>
       ) : (
         <div className="divide-y divide-border/45" role="list">
@@ -108,6 +109,35 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
         </div>
       )}
     </section>
+  );
+}
+
+export function LinkedTaskCard({
+  projectName,
+  task,
+}: {
+  readonly projectName: string;
+  readonly task: ThreadLinkedTask;
+}) {
+  return (
+    <article key={task.id} data-linked-controller-task="true">
+      <div className="min-w-0">
+        <span className="block font-medium text-sm leading-snug">
+          <ThreadOriginTitle title={`[${task.origin}] ${task.title}`} />
+        </span>
+        <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
+          {[
+            projectName || task.projectId,
+            task.source,
+            task.statusLabel,
+            formatUpdatedAt(task.updatedAt),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      <DelegationChecklist items={task.checklist} />
+    </article>
   );
 }
 
@@ -204,7 +234,7 @@ export function RtxCurrentTasksPanel({
   threadRef,
 }: {
   readonly progress?: ComposerTasksProgress | null;
-  readonly source?: "rtx" | "thread";
+  readonly source?: "rtx" | "thread" | "controller";
   readonly steps?: readonly ComposerTaskStep[];
   readonly threadRef: ScopedThreadRef;
 }) {
@@ -251,28 +281,17 @@ export function RtxCurrentTasksPanel({
         ) : state === null && !error ? null : linkedTask === null ? (
           <div className="flex min-h-48 flex-col items-center justify-center text-center">
             <Circle className="size-7 text-muted-foreground/35" />
-            <p className="mt-3 font-medium text-sm">No RSL delegated task</p>
+            <p className="mt-3 font-medium text-sm">
+              {source === "controller" ? "No RedClaw task" : "No RSL delegated task"}
+            </p>
             <p className="mt-1 max-w-64 text-muted-foreground text-xs">
-              This thread is not linked to an RSL Ai development handoff.
+              {source === "controller"
+                ? "Tasks dispatched through RedClaw appear here after they are attached to this T3 conversation."
+                : "This thread is not linked to an RSL Ai development handoff."}
             </p>
           </div>
         ) : (
-          <article key={linkedTask.id}>
-            <div className="min-w-0">
-              <span className="block font-medium text-sm leading-snug">{linkedTask.title}</span>
-              <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
-                {[
-                  state?.projectName || linkedTask.projectId,
-                  linkedTask.source,
-                  linkedTask.origin,
-                  formatUpdatedAt(linkedTask.updatedAt),
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-            </div>
-            <DelegationChecklist items={linkedTask.checklist} />
-          </article>
+          <LinkedTaskCard projectName={state?.projectName ?? ""} task={linkedTask} />
         )}
       </div>
     </div>

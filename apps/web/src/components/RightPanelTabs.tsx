@@ -85,7 +85,7 @@ interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   currentTasksAvailable: boolean;
-  currentTasksSource: "rtx" | "thread";
+  currentTasksSource: "rtx" | "thread" | "controller";
   rtxOrchestratorAvailable: boolean;
   /** Omit unavailable launchers entirely for intentionally reduced product profiles. */
   showUnavailableActions?: boolean;
@@ -274,7 +274,7 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   currentTasksAvailable: boolean;
-  currentTasksSource: "rtx" | "thread";
+  currentTasksSource: "rtx" | "thread" | "controller";
   rtxOrchestratorAvailable: boolean;
   showUnavailableActions?: boolean;
   liveAgentCount: number;
@@ -348,7 +348,9 @@ function RightPanelEmptyState(props: {
       description:
         props.currentTasksSource === "thread"
           ? "Track this agent's plan and progress."
-          : "Track RTX jobs and r3xCode threads.",
+          : props.currentTasksSource === "controller"
+            ? "Track tasks dispatched from RedClaw."
+            : "Track RTX jobs and r3xCode threads.",
       icon: ListTodo,
       shortcut: "C",
       available: props.currentTasksAvailable,

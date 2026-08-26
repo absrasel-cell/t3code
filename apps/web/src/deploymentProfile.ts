@@ -3,7 +3,7 @@ export type DeploymentUiCapabilities = {
   readonly appStageLabel: string | null;
   readonly appearanceModeToggle: boolean;
   readonly currentTasks: boolean;
-  readonly currentTasksSource: "rtx" | "thread";
+  readonly currentTasksSource: "rtx" | "thread" | "controller";
   readonly productShell: boolean;
   readonly projectAdministration: boolean;
   readonly rtxOrchestrator: boolean;
@@ -19,7 +19,7 @@ export function deploymentUiCapabilitiesForProfile(
       appStageLabel: null,
       appearanceModeToggle: true,
       currentTasks: true,
-      currentTasksSource: "thread",
+      currentTasksSource: "controller",
       productShell: true,
       projectAdministration: false,
       rtxOrchestrator: false,
@@ -33,7 +33,7 @@ export function deploymentUiCapabilitiesForProfile(
       appStageLabel: null,
       appearanceModeToggle: true,
       currentTasks: true,
-      currentTasksSource: "thread",
+      currentTasksSource: "controller",
       productShell: true,
       projectAdministration: true,
       rtxOrchestrator: false,

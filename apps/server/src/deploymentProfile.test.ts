@@ -144,6 +144,13 @@ describe("LLP chat-only deployment profile", () => {
     ).toBe(true);
     expect(
       isHttpRequestAllowedByDeploymentProfile(
+        "GET",
+        "/api/rtx/thread-task?environmentId=llp-t3&threadId=thread-1",
+        LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+      ),
+    ).toBe(true);
+    expect(
+      isHttpRequestAllowedByDeploymentProfile(
         "POST",
         "/api/connect/relay-config",
         LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,

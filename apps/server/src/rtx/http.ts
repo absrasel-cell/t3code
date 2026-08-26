@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off - This narrow local bridge is a bounded Node subprocess adapter.
 import * as NodeChildProcess from "node:child_process";
-import * as NodePath from "node:path";
 
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -15,6 +14,8 @@ import {
 } from "effect/unstable/http";
 
 import { authenticateRawRouteWithScope } from "../http.ts";
+
+import { resolveTaskBridgeInvocation } from "./bridgeCommand.ts";
 
 const MAX_BRIDGE_OUTPUT_BYTES = 2 * 1024 * 1024;
 const BRIDGE_TIMEOUT_MS = 45_000;
@@ -31,21 +32,16 @@ class RtxBridgeError extends Error {
   readonly _tag = "RtxBridgeError";
 }
 
-function bridgePath(): string | null {
-  if (process.env.RTX_ORCHESTRATOR_ENABLED !== "1") return null;
-  const configured = process.env.RTX_ORCHESTRATOR_BRIDGE?.trim();
-  return configured ? NodePath.resolve(configured) : null;
-}
-
 function runBridge(action: string, input: unknown): Promise<unknown> {
-  const file = bridgePath();
-  if (!file) {
-    return Promise.reject(new Error("RTX orchestration is not configured for this server."));
+  const bridgeLabel = action === "thread-task" ? "Current Tasks" : "RTX orchestration";
+  const invocation = resolveTaskBridgeInvocation(action);
+  if (!invocation) {
+    return Promise.reject(new Error(`${bridgeLabel} is not configured for this server.`));
   }
 
   return new Promise((resolve, reject) => {
-    const child = NodeChildProcess.spawn(process.execPath, [file, action], {
-      cwd: NodePath.dirname(file),
+    const child = NodeChildProcess.spawn(invocation.command, invocation.args, {
+      cwd: invocation.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -60,7 +56,7 @@ function runBridge(action: string, input: unknown): Promise<unknown> {
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(() => reject(new Error("RTX orchestration timed out.")));
+      finish(() => reject(new Error(`${bridgeLabel} timed out.`)));
     }, BRIDGE_TIMEOUT_MS);
 
     child.stdout.setEncoding("utf8");
@@ -69,26 +65,26 @@ function runBridge(action: string, input: unknown): Promise<unknown> {
       stdout += chunk;
       if (Buffer.byteLength(stdout, "utf8") > MAX_BRIDGE_OUTPUT_BYTES) {
         child.kill("SIGKILL");
-        finish(() => reject(new Error("RTX orchestration returned too much data.")));
+        finish(() => reject(new Error(`${bridgeLabel} returned too much data.`)));
       }
     });
     child.stderr.on("data", (chunk: string) => {
       if (stderr.length < 2_000) stderr += chunk;
     });
     child.once("error", () => {
-      finish(() => reject(new Error("RTX orchestration could not start.")));
+      finish(() => reject(new Error(`${bridgeLabel} could not start.`)));
     });
     child.once("close", (code) => {
       finish(() => {
         if (code !== 0) {
           const detail = stderr.trim();
-          reject(new Error(detail || "RTX orchestration failed."));
+          reject(new Error(detail || `${bridgeLabel} failed.`));
           return;
         }
         try {
           resolve(JSON.parse(stdout));
         } catch {
-          reject(new Error("RTX orchestration returned an invalid response."));
+          reject(new Error(`${bridgeLabel} returned an invalid response.`));
         }
       });
     });
@@ -108,7 +104,13 @@ function bridgeResponse(action: string, input: unknown) {
   return Effect.tryPromise({
     try: () => runBridge(action, input),
     catch: (cause) =>
-      new RtxBridgeError(cause instanceof Error ? cause.message : "RTX orchestration failed."),
+      new RtxBridgeError(
+        cause instanceof Error
+          ? cause.message
+          : action === "thread-task"
+            ? "Current Tasks failed."
+            : "RTX orchestration failed.",
+      ),
   }).pipe(
     Effect.match({
       onFailure: (cause) => jsonError(cause.message, 502),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   isRslDelegatedTask,
+  isThreadLinkedTask,
   rslThreadTaskRetryDelay,
   selectAttachedRslDelegatedTasks,
   selectRslDelegatedTasks,
@@ -31,6 +32,16 @@ describe("RSL delegated task selection", () => {
   it("accepts the RedClaw RSL to RTX delegation contract", () => {
     expect(isRslDelegatedTask(delegatedTask)).toBe(true);
     expect(selectRslDelegatedTasks([delegatedTask])).toEqual([delegatedTask]);
+  });
+
+  it("accepts a sanitized Luma to T3 controller task for the current thread", () => {
+    expect(
+      isThreadLinkedTask({
+        ...delegatedTask,
+        source: "Luma → T3",
+        objectiveId: delegatedTask.id,
+      }),
+    ).toBe(true);
   });
 
   it("excludes ordinary Codex and Claude provider work", () => {

@@ -84,6 +84,7 @@ function renderTabs(
   audio?: { audible?: boolean; audioMuted?: boolean },
   previewRuntimeTabId: ((tabId: string) => string) | null = (tabId) => `runtime:${tabId}`,
   restricted = false,
+  currentTasksSource: "rtx" | "thread" | "controller" = restricted ? "thread" : "rtx",
 ) {
   return renderToStaticMarkup(
     <RightPanelTabs
@@ -120,7 +121,7 @@ function renderTabs(
       pullRequestAvailable={false}
       agentsAvailable={false}
       currentTasksAvailable
-      currentTasksSource={restricted ? "thread" : "rtx"}
+      currentTasksSource={currentTasksSource}
       rtxOrchestratorAvailable={!restricted}
       showUnavailableActions={!restricted}
     >
@@ -143,6 +144,13 @@ describe("RightPanelTabs reduced product profile", () => {
     expect(html).not.toContain(">Pull request<");
     expect(html).not.toContain(">Agents<");
     expect(html).not.toContain(">RTX Orchestrator<");
+  });
+
+  it("describes controller-backed RedClaw tasks without RTX wording", () => {
+    const html = renderTabs(null, undefined, undefined, undefined, true, "controller");
+
+    expect(html).toContain("Track tasks dispatched from RedClaw.");
+    expect(html).not.toContain("Track RTX jobs");
   });
 });
 
