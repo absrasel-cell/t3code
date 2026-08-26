@@ -26,6 +26,7 @@ describe("RtxCurrentTasksPanel thread plan mode", () => {
           threadId: "22222222-2222-4222-8222-222222222222",
           environmentId: "llp-t3",
           checklist: [
+            { id: "task-0", title: "Inspect the current light theme", status: "done" },
             { id: "task-1", title: "Read the linked controller task", status: "ongoing" },
             { id: "task-2", title: "Render the ordered checklist", status: "pending" },
           ],
@@ -37,8 +38,11 @@ describe("RtxCurrentTasksPanel thread plan mode", () => {
     expect(markup).toContain("Repair the Current Tasks panel");
     expect(markup).toContain("Luma → T3");
     expect(markup).toContain("T3 working");
-    expect(markup).toContain("Status · 0/2");
+    expect(markup).toContain("Status · 1/3");
     expect(markup).toContain("Render the ordered checklist");
+    expect(markup).toContain("text-success-foreground");
+    expect(markup).toContain("text-info-foreground");
+    expect(markup).not.toMatch(/text-(?:muted-foreground|success|info)\/(?:45|60|70|75)/);
   });
 
   it("renders the active thread plan without the RedClaw bridge", () => {

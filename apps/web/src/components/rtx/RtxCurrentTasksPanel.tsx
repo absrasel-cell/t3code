@@ -47,7 +47,7 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
         </span>
       </div>
       {items.length === 0 ? (
-        <p className="py-3 text-[11px] text-muted-foreground/70">
+        <p className="py-3 text-[11px] text-muted-foreground">
           No controller checklist was recorded for this older task.
         </p>
       ) : (
@@ -69,9 +69,15 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
               >
                 <span className="flex min-w-0 items-start gap-2.5">
                   {item.status === "done" ? (
-                    <CheckCircle2 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-success" />
+                    <CheckCircle2
+                      aria-hidden
+                      className="mt-0.5 size-3.5 shrink-0 text-success-foreground"
+                    />
                   ) : item.status === "ongoing" ? (
-                    <CircleDot aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
+                    <CircleDot
+                      aria-hidden
+                      className="mt-0.5 size-3.5 shrink-0 text-info-foreground"
+                    />
                   ) : (
                     <Circle
                       aria-hidden
@@ -82,10 +88,10 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
                     className={cn(
                       "min-w-0",
                       item.status === "done"
-                        ? "text-muted-foreground/60"
+                        ? "text-muted-foreground"
                         : item.status === "ongoing"
                           ? "text-foreground"
-                          : "text-muted-foreground/75",
+                          : "text-muted-foreground",
                     )}
                   >
                     {item.title}
@@ -95,10 +101,10 @@ function DelegationChecklist({ items }: { readonly items: ReadonlyArray<RslCheck
                   className={cn(
                     "shrink-0 pt-px text-[10px] tabular-nums",
                     item.status === "ongoing"
-                      ? "text-info"
+                      ? "text-info-foreground"
                       : item.status === "done"
-                        ? "text-success/70"
-                        : "text-muted-foreground/45",
+                        ? "text-success-foreground"
+                        : "text-muted-foreground",
                   )}
                 >
                   {label}
@@ -180,9 +186,15 @@ function ThreadTodoChecklist({
             >
               <span className="flex min-w-0 items-start gap-2.5">
                 {item.status === "completed" ? (
-                  <CheckCircle2 aria-hidden className="mt-0.5 size-3.5 shrink-0 text-success" />
+                  <CheckCircle2
+                    aria-hidden
+                    className="mt-0.5 size-3.5 shrink-0 text-success-foreground"
+                  />
                 ) : item.status === "inProgress" ? (
-                  <CircleDot aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
+                  <CircleDot
+                    aria-hidden
+                    className="mt-0.5 size-3.5 shrink-0 text-info-foreground"
+                  />
                 ) : (
                   <Circle
                     aria-hidden
@@ -193,10 +205,10 @@ function ThreadTodoChecklist({
                   className={cn(
                     "min-w-0",
                     item.status === "completed"
-                      ? "text-muted-foreground/60"
+                      ? "text-muted-foreground"
                       : item.status === "inProgress"
                         ? "text-foreground"
-                        : "text-muted-foreground/75",
+                        : "text-muted-foreground",
                   )}
                 >
                   {item.step}
@@ -206,10 +218,10 @@ function ThreadTodoChecklist({
                 className={cn(
                   "shrink-0 pt-px text-[10px] tabular-nums",
                   item.status === "inProgress"
-                    ? "text-info"
+                    ? "text-info-foreground"
                     : item.status === "completed"
-                      ? "text-success/70"
-                      : "text-muted-foreground/45",
+                      ? "text-success-foreground"
+                      : "text-muted-foreground",
                 )}
               >
                 {label}
