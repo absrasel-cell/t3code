@@ -85,8 +85,12 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   );
 });
 
+export function sidebarBrandLabelForAppName(appBaseName: string) {
+  return appBaseName === "r3xCode" ? "R3xCode" : null;
+}
+
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
-  const brandedForR3xCode = APP_BASE_NAME === "r3xCode";
+  const brandedLabel = sidebarBrandLabelForAppName(APP_BASE_NAME);
   return (
     <Link
       aria-label="Go to threads"
@@ -96,19 +100,21 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      {brandedForR3xCode ? (
-        <span className="truncate text-sm font-semibold tracking-tight">redXtrm</span>
+      {brandedLabel ? (
+        <span className="truncate text-sm font-semibold tracking-tight">{brandedLabel}</span>
       ) : (
-        <T3Wordmark />
+        <>
+          <T3Wordmark />
+          <span
+            className={cn(
+              "-translate-y-px truncate text-sm font-medium tracking-tight",
+              onBackdrop ? "text-white/70" : "text-muted-foreground",
+            )}
+          >
+            Code
+          </span>
+        </>
       )}
-      <span
-        className={cn(
-          "-translate-y-px truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        {brandedForR3xCode ? "Builder" : "Code"}
-      </span>
     </Link>
   );
 }
