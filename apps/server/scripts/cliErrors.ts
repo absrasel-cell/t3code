@@ -14,6 +14,22 @@ export class ServerCliCommandExitError extends Schema.TaggedErrorClass<ServerCli
   }
 }
 
+export class ServerCliDeploymentProfileMismatchError extends Schema.TaggedErrorClass<ServerCliDeploymentProfileMismatchError>()(
+  "ServerCliDeploymentProfileMismatchError",
+  {
+    serverProfile: Schema.NullOr(Schema.String),
+    webProfile: Schema.NullOr(Schema.String),
+  },
+) {
+  override get message(): string {
+    return (
+      "Protected LLP builds require matching browser and server profiles. " +
+      `Received T3CODE_DEPLOYMENT_PROFILE=${this.serverProfile ?? "<unset>"} and ` +
+      `VITE_T3CODE_DEPLOYMENT_PROFILE=${this.webProfile ?? "<unset>"}.`
+    );
+  }
+}
+
 export class ServerCliPublishIconSourceMissingError extends Schema.TaggedErrorClass<ServerCliPublishIconSourceMissingError>()(
   "ServerCliPublishIconSourceMissingError",
   {

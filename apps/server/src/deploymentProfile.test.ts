@@ -16,6 +16,7 @@ import {
   commandDenialReasonForDeploymentProfile,
   isHttpRequestAllowedByDeploymentProfile,
   isRpcMethodAllowedByDeploymentProfile,
+  resolveLlpBuildProfile,
   shouldPreserveBundledWebIcons,
 } from "./deploymentProfile.ts";
 
@@ -44,6 +45,49 @@ const createThread = (): Extract<OrchestrationCommand, { type: "thread.create" }
 });
 
 describe("LLP chat-only deployment profile", () => {
+  it("requires matching browser and server profiles for protected builds", () => {
+    expect(
+      resolveLlpBuildProfile({
+        T3CODE_DEPLOYMENT_PROFILE: LLP_FULL_DEPLOYMENT_PROFILE,
+        VITE_T3CODE_DEPLOYMENT_PROFILE: LLP_FULL_DEPLOYMENT_PROFILE,
+      }),
+    ).toEqual({ kind: "matched", profile: LLP_FULL_DEPLOYMENT_PROFILE });
+    expect(
+      resolveLlpBuildProfile({
+        T3CODE_DEPLOYMENT_PROFILE: LLP_FULL_DEPLOYMENT_PROFILE,
+      }),
+    ).toEqual({
+      kind: "mismatch",
+      serverProfile: LLP_FULL_DEPLOYMENT_PROFILE,
+      webProfile: null,
+    });
+    expect(
+      resolveLlpBuildProfile({
+        VITE_T3CODE_DEPLOYMENT_PROFILE: LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+      }),
+    ).toEqual({
+      kind: "mismatch",
+      serverProfile: null,
+      webProfile: LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+    });
+    expect(
+      resolveLlpBuildProfile({
+        T3CODE_DEPLOYMENT_PROFILE: "standard",
+        VITE_T3CODE_DEPLOYMENT_PROFILE: "standard",
+      }),
+    ).toEqual({ kind: "not-llp" });
+    expect(
+      resolveLlpBuildProfile({
+        T3CODE_DEPLOYMENT_PROFILE: "llp-experimental",
+        VITE_T3CODE_DEPLOYMENT_PROFILE: "llp-experimental",
+      }),
+    ).toEqual({
+      kind: "mismatch",
+      serverProfile: "llp-experimental",
+      webProfile: "llp-experimental",
+    });
+  });
+
   it("preserves the web build's branded icon set", () => {
     expect(shouldPreserveBundledWebIcons(LLP_CHAT_ONLY_DEPLOYMENT_PROFILE)).toBe(true);
     expect(shouldPreserveBundledWebIcons(LLP_FULL_DEPLOYMENT_PROFILE)).toBe(true);

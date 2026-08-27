@@ -1,6 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 
-import { ServerCliBuildAssetMissingError, ServerCliCommandExitError } from "./cliErrors.ts";
+import {
+  ServerCliBuildAssetMissingError,
+  ServerCliCommandExitError,
+  ServerCliDeploymentProfileMismatchError,
+} from "./cliErrors.ts";
 
 describe("server CLI errors", () => {
   it("preserves failed command context without changing its message", () => {
@@ -26,6 +30,20 @@ describe("server CLI errors", () => {
     assert.equal(
       error.message,
       "Missing build asset: /repo/server.mjs. Run the build subcommand first.",
+    );
+  });
+
+  it("reports both deployment profiles when an LLP build is inconsistent", () => {
+    const error = new ServerCliDeploymentProfileMismatchError({
+      serverProfile: "llp-full",
+      webProfile: null,
+    });
+
+    assert.equal(
+      error.message,
+      "Protected LLP builds require matching browser and server profiles. " +
+        "Received T3CODE_DEPLOYMENT_PROFILE=llp-full and " +
+        "VITE_T3CODE_DEPLOYMENT_PROFILE=<unset>.",
     );
   });
 });

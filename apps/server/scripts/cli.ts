@@ -23,12 +23,13 @@ import serverPackageJson from "../package.json" with { type: "json" };
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
+  ServerCliDeploymentProfileMismatchError,
   ServerCliDevelopmentIconSourceMissingError,
   ServerCliDevelopmentIconTargetMissingError,
   ServerCliPublishIconSourceMissingError,
   ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
-import { shouldPreserveBundledWebIcons } from "../src/deploymentProfile.ts";
+import { resolveLlpBuildProfile, shouldPreserveBundledWebIcons } from "../src/deploymentProfile.ts";
 
 interface PackageJson {
   name: string;
@@ -152,6 +153,14 @@ const buildCmd = Command.make(
       const fs = yield* FileSystem.FileSystem;
       const repoRoot = yield* RepoRoot;
       const serverDir = path.join(repoRoot, "apps/server");
+      const llpBuildProfile = resolveLlpBuildProfile();
+
+      if (llpBuildProfile.kind === "mismatch") {
+        return yield* new ServerCliDeploymentProfileMismatchError({
+          serverProfile: llpBuildProfile.serverProfile,
+          webProfile: llpBuildProfile.webProfile,
+        });
+      }
 
       yield* Effect.log("[cli] Running tsdown...");
       yield* runCommand(
@@ -176,6 +185,28 @@ const buildCmd = Command.make(
         yield* Effect.log("[cli] Bundled web app into dist/client");
       } else {
         yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");
+      }
+
+      if (llpBuildProfile.kind === "matched") {
+        yield* runCommand(
+          ChildProcess.make(
+            "bash",
+            [
+              path.join(repoRoot, "apps/web/scripts/verify-r3xcode-branding.sh"),
+              "--dist",
+              clientTarget,
+              "--profile",
+              llpBuildProfile.profile,
+            ],
+            {
+              cwd: repoRoot,
+              stdout: "inherit",
+              stderr: "inherit",
+              shell: false,
+            },
+          ),
+        );
+        yield* Effect.log(`[cli] Verified protected ${llpBuildProfile.profile} web bundle`);
       }
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));

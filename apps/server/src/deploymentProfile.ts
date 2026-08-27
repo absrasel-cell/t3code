@@ -9,6 +9,44 @@ import {
 export const LLP_CHAT_ONLY_DEPLOYMENT_PROFILE = "llp-chat-only";
 export const LLP_FULL_DEPLOYMENT_PROFILE = "llp-full";
 
+const LLP_DEPLOYMENT_PROFILES = new Set([
+  LLP_CHAT_ONLY_DEPLOYMENT_PROFILE,
+  LLP_FULL_DEPLOYMENT_PROFILE,
+]);
+
+interface LlpBuildProfileEnvironment {
+  readonly T3CODE_DEPLOYMENT_PROFILE?: string | undefined;
+  readonly VITE_T3CODE_DEPLOYMENT_PROFILE?: string | undefined;
+}
+
+function normalizedProfile(profile: string | undefined): string | null {
+  const normalized = profile?.trim() ?? "";
+  return normalized === "" ? null : normalized;
+}
+
+export function resolveLlpBuildProfile(
+  environment: LlpBuildProfileEnvironment = {
+    T3CODE_DEPLOYMENT_PROFILE: process.env.T3CODE_DEPLOYMENT_PROFILE,
+    VITE_T3CODE_DEPLOYMENT_PROFILE: process.env.VITE_T3CODE_DEPLOYMENT_PROFILE,
+  },
+) {
+  const serverProfile = normalizedProfile(environment.T3CODE_DEPLOYMENT_PROFILE);
+  const webProfile = normalizedProfile(environment.VITE_T3CODE_DEPLOYMENT_PROFILE);
+  const claimsLlpProfile =
+    serverProfile?.startsWith("llp-") === true || webProfile?.startsWith("llp-") === true;
+
+  if (!claimsLlpProfile) return { kind: "not-llp" } as const;
+  if (
+    serverProfile === webProfile &&
+    serverProfile !== null &&
+    LLP_DEPLOYMENT_PROFILES.has(serverProfile)
+  ) {
+    return { kind: "matched", profile: serverProfile } as const;
+  }
+
+  return { kind: "mismatch", serverProfile, webProfile } as const;
+}
+
 export function isLlpChatOnlyDeploymentProfile(
   profile = process.env.T3CODE_DEPLOYMENT_PROFILE,
 ): boolean {
